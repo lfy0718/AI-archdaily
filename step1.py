@@ -1,8 +1,3 @@
-# -*- coding: utf-8 -*-
-# @Author  : Yiheng Feng
-# @Time    : 4/11/2025 9:32 PM
-# @Function:
-
 import json
 import os
 import random
@@ -14,7 +9,7 @@ base_url = "https://www.archdaily.com/search/api/v1/us/projects"
 pages = list(range(1, 501))
 
 # 检查本地results/projects文件夹中是否已经存在对应的JSON文件
-results_dir = 'results/projects'
+results_dir = 'results/pages'
 if not os.path.exists(results_dir):
     os.makedirs(results_dir)
 
