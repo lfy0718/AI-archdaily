@@ -1,3 +1,5 @@
+# Step4：根据每个项目文件夹中的项目ID.json文件中的图片信息，下载项目miniatures图片，支持并发下载
+# 更新： 如果后续爬取了项目的Image Gallery， 此步骤可以省略
 import json
 import logging
 import os
@@ -10,7 +12,7 @@ import requests
 from tqdm import tqdm
 
 # 配置日志
-log_dir = f'./log/{__name__}'
+log_dir = f'./log/step4'
 os.makedirs(log_dir, exist_ok=True)
 log_filename = datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.log'
 log_file_path = os.path.join(log_dir, log_filename)

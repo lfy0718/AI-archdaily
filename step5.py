@@ -1,3 +1,4 @@
+# Step5： 爬取项目的页面内容及Image Gallery信息，保存为content.json， 分为两个list， {'main_content': [], 'image_gallery': []}， 支持并发下载
 import json
 import logging
 import os
@@ -11,7 +12,7 @@ from tqdm import tqdm
 from headers import headers
 
 # 配置日志
-log_dir = f'./log/{__name__}'
+log_dir = f'./log/step5'
 os.makedirs(log_dir, exist_ok=True)
 log_filename = datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.log'
 log_file_path = os.path.join(log_dir, log_filename)

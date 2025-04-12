@@ -1,3 +1,5 @@
+# Step3：根据每个项目文件夹中的项目ID.json文件中的图片信息，下载项目封面，支持并发下载
+# 更新： 如果后续爬取了项目的Image Gallery， 此步骤可以省略
 import json
 import logging
 import os
@@ -10,7 +12,7 @@ import requests
 from tqdm import tqdm
 
 # 配置日志
-log_dir = f'./log/{__name__}'
+log_dir = f'./log/step3'
 os.makedirs(log_dir, exist_ok=True)
 log_filename = datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.log'
 log_file_path = os.path.join(log_dir, log_filename)
@@ -81,7 +83,7 @@ def download_image(json_file_path, i):
 
 
 # 使用ThreadPoolExecutor进行并发下载
-with ThreadPoolExecutor(max_workers=4) as executor:
+with ThreadPoolExecutor(max_workers=16) as executor:
     futures = [executor.submit(download_image, json_file_path, i) for i, json_file_path in enumerate(json_path_queue)]
     for future in as_completed(futures):
         future.result()
