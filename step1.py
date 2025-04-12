@@ -4,6 +4,9 @@ import random
 import time
 
 import requests
+
+from headers import headers
+
 base_url = "https://www.archdaily.com/search/api/v1/us/projects"
 # 生成1到500的列表
 pages = list(range(1, 501))
@@ -27,23 +30,7 @@ pages = [page for page in pages if page not in existing_pages]
 # random.shuffle(pages)
 
 # 定义模拟正常访问的header
-headers = {
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br, zstd",
-    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
-    "Cache-Control": "max-age=0",
-    "Host": "www.archdaily.com",
-    "Priority": "u=0, i",
-    "Sec-Ch-Ua": "\"Microsoft Edge\";v=\"135\", \"Not-A.Brand\";v=\"8\", \"Chromium\";v=\"135\"",
-    "Sec-Ch-Ua-Mobile": "?0",
-    "Sec-Ch-Ua-Platform": "\"Windows\"",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1",
-    "Upgrade-Insecure-Requests": "1",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36 Edg/135.0.0.0"
-}
+
 
 # 爬取每个页码的数据并保存为JSON文件
 for page in pages:
