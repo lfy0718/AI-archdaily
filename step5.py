@@ -1,3 +1,4 @@
+# Step5： 爬取项目的页面内容及Image Gallery信息，保存为content.json， 分为两个list， {'main_content': [], 'image_gallery': []}， 支持并发下载
 import json
 import logging
 import os

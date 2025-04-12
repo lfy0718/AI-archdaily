@@ -1,3 +1,5 @@
+# Step4：根据每个项目文件夹中的项目ID.json文件中的图片信息，下载项目miniatures图片，支持并发下载
+# 更新： 如果后续爬取了项目的Image Gallery， 此步骤可以省略
 import json
 import logging
 import os
