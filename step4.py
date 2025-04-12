@@ -10,7 +10,7 @@ import requests
 from tqdm import tqdm
 
 # 配置日志
-log_dir = f'./log/{__name__}'
+log_dir = f'./log/step4'
 os.makedirs(log_dir, exist_ok=True)
 log_filename = datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.log'
 log_file_path = os.path.join(log_dir, log_filename)
