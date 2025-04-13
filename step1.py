@@ -30,8 +30,7 @@ logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 from headers import headers
 
-base_url = "https://www.archdaily.com/search/api/v1/us/projects"  # 通过网络抓包获取
-# 生成1到500的列表， 500是API的最大页码，由二分法获取，超过这个数字获取的内容将不变
+base_url = "https://www.archdaily.com/search/api/v1/us/projects"
 pages = list(range(1, 501))
 
 # 检查本地results/projects文件夹中是否已经存在对应的JSON文件

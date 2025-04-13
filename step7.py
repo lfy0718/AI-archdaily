@@ -1,20 +1,41 @@
 # step7：建立初步的database表格
+import json
+import logging
 import os
+from datetime import datetime
+
 import pandas as pd
 import hashlib
 
 from tqdm import tqdm
 
+# 配置日志
+log_dir = f'./log/step7'
+os.makedirs(log_dir, exist_ok=True)
+log_filename = datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + '.log'
+log_file_path = os.path.join(log_dir, log_filename)
+
+# 创建一个文件处理器，设置编码为UTF-8
+file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(
+    logging.Formatter("%(levelname)-8s %(asctime)-24s %(filename)-24s:%(lineno)-4d | %(message)s"))
+
+# 创建一个控制台处理器
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(
+    logging.Formatter("%(levelname)-8s %(asctime)-24s %(filename)-24s:%(lineno)-4d | %(message)s"))
+
+# 获取根日志器，并添加处理器
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
 projects_dir = 'results/projects'
 output_dir = 'results/database'
-
-
-def calculate_image_hash(image_path):
-    """计算图片的哈希值"""
-    with open(image_path, 'rb') as f:
-        image_data = f.read()
-        return hashlib.md5(image_data).hexdigest()
-
+image_size_type = 'large'  # 可选项：large, slideshow, medium
 
 def main(incremental=True):
     image_database = []
@@ -34,24 +55,41 @@ def main(incremental=True):
 
     # 记录初始项目数量
     initial_count = len(image_database)
-
+    logging.info(f"existing images count: {initial_count}")
     # 遍历每个项目文件夹
-    for project_folder in tqdm(os.listdir(projects_dir)):
+    for project_folder in os.listdir(projects_dir):
         project_path = os.path.join(projects_dir, project_folder)
-        image_path = os.path.join(project_path, 'large.jpg')
+        content_json_path = os.path.join(project_path, 'content.json')
+        image_gallery_path = os.path.join(project_path, 'image_gallery', image_size_type)
+        if not os.path.isfile(content_json_path) or not os.path.isdir(image_gallery_path):
+            continue
 
-        if os.path.isfile(image_path):  # 如果存在large.jpg(封面图)
+        # 读取content.json文件
+        with open(content_json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            image_gallery_images = data.get('image_gallery', [])
+        image_missing_count = 0
+        # 遍历image_gallery/<image_size_type>下的所有图片文件
+        for img_index, image_gallery_image in enumerate(image_gallery_images):
+            img_url = image_gallery_image.get(f'url_{image_size_type}')
+            if not img_url:
+                continue
+            img_filename = f"{img_index:05d}.jpg"
+            image_path = os.path.join(image_gallery_path, img_filename)
+            if not os.path.isfile(image_path):
+                image_missing_count += 1
+                continue
             # 检查路径是否已经存在
             if incremental and image_path in existing_paths:
                 continue
-
-            image_hash = calculate_image_hash(image_path)
             image_database.append({
                 'image_path': image_path,
-                'image_hash': image_hash,
-                'image_url': '',
-                'cn_clip_vector': ''
+                'image_url': img_url,
+                'cn_clip_vector': '',
+                'project_id': project_folder
             })
+        if image_missing_count > 0:
+            logging.warning(f"[{project_folder}] image_gallery/{image_size_type} is missing {image_missing_count} images, total {len(image_gallery_images)}")
 
     # 创建DataFrame并保存
     df = pd.DataFrame(image_database)
@@ -61,8 +99,8 @@ def main(incremental=True):
     new_count = len(image_database) - initial_count
 
     # 打印新增项目数量和当前总项目数量
-    print(f"新增项目数量: {new_count}")
-    print(f"当前总项目数量: {len(image_database)}")
+    print(f"新增图片数量: {new_count}")
+    print(f"当前总图片数量: {len(image_database)}")
 
 
 if __name__ == '__main__':
