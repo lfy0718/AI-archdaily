@@ -10,6 +10,8 @@ from PIL import Image
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import apis.cn_clip_api
+
 # 配置日志
 log_dir = f'./log/step8'
 os.makedirs(log_dir, exist_ok=True)
@@ -35,38 +37,40 @@ logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
 
+database_name = "image_database"
+get_features_func = apis.cn_clip_api.get_image_features
+
 input_dir = 'results/database'
 backup_dir = os.path.join(input_dir, 'backup')
-pkl_path = os.path.join(input_dir, 'image_database.pkl')
+pkl_path = os.path.join(input_dir, f'{database_name}.pkl')
 
 # 确保备份目录存在
 os.makedirs(backup_dir, exist_ok=True)
 
 # 备份文件
 timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-backup_path = os.path.join(backup_dir, f'image_database.pkl.{timestamp}.backup')
+backup_path = os.path.join(backup_dir, f'{database_name}.pkl.{timestamp}.backup')
 shutil.copy2(pkl_path, backup_path)
 logging.info(f'Backup created at {backup_path}')
 
 # 读取pkl文件
-logging.info('Reading image_database.pkl...')
+logging.info(f'Reading {database_name}.pkl...')
 df = pd.read_pickle(pkl_path)
 
 # 筛选出需要处理的行
-rows_to_process = df[df['cn_clip_vector'].apply(lambda x: isinstance(x, str))]
+rows_to_process = df[df['features'].apply(lambda x: isinstance(x, str))]
 logging.info(f"{len(rows_to_process)} rows need to be processed. total = {len(df)}")
 time.sleep(1)
 
-logging.info('Loading cn_clip Model...')
-from apis.cn_clip_api import get_image_features
+
 
 
 def process_row(index, row, df):
     image_path = row['image_path']
     try:
         image = Image.open(image_path)
-        feature_vector = get_image_features(image)
-        df.at[index, 'cn_clip_vector'] = feature_vector
+        feature_vector = get_features_func(image)
+        df.at[index, 'features'] = feature_vector
     except Exception as e:
         logging.error(f'Error processing {image_path}: {e}')
 
@@ -79,5 +83,5 @@ with ThreadPoolExecutor(max_workers=32) as executor:  # 根据显存设置
 
 # 保存更新后的DataFrame
 df.to_pickle(pkl_path)
-logging.info(f'Image_database.pkl updated. {pkl_path}')
+logging.info(f'{database_name}.pkl updated. {pkl_path}')
 

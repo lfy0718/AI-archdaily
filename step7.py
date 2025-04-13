@@ -36,7 +36,7 @@ logger.addHandler(console_handler)
 projects_dir = 'results/projects'
 output_dir = 'results/database'
 image_size_type = 'large'  # 可选项：large, slideshow, medium
-
+database_name = "image_database"
 def main(incremental=True):
     image_database = []
 
@@ -44,7 +44,7 @@ def main(incremental=True):
     os.makedirs(output_dir, exist_ok=True)
 
     # 检查是否进行增量读取
-    pkl_path = os.path.join(output_dir, 'image_database.pkl')
+    pkl_path = os.path.join(output_dir, f'{database_name}.pkl')
     existing_paths = set()  # 初始化existing_paths为空集合
     if incremental and os.path.exists(pkl_path):
         # 读取已有的pkl文件
@@ -85,7 +85,7 @@ def main(incremental=True):
             image_database.append({
                 'image_path': image_path,
                 'image_url': img_url,
-                'cn_clip_vector': '',
+                'features': '',
                 'project_id': project_folder
             })
         if image_missing_count > 0:
