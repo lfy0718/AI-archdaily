@@ -31,7 +31,7 @@ console_handler.setFormatter(logging.Formatter("%(levelname)-8s %(asctime)-24s %
 
 # 获取根日志器，并添加处理器
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.ERROR)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
@@ -47,7 +47,7 @@ projects_dir = './results/projects'
 
 # 全局变量，存储所有项目
 all_projects = os.listdir(projects_dir)
-
+all_projects_set = set(all_projects)
 # 从本地文件加载invalid_project_ids
 invalid_project_ids_path = './results/invalid_project_ids.json'
 if os.path.exists(invalid_project_ids_path):
@@ -55,6 +55,25 @@ if os.path.exists(invalid_project_ids_path):
         invalid_project_ids = set(json.load(f))
 else:
     invalid_project_ids = set()
+
+# 获取用户输入的开始和结束project id序号
+start_id = int(input("请输入开始的project id序号: "))
+end_id = int(input("请输入结束的project id序号: "))
+
+# 转换为str列表
+id_range = list(range(start_id, end_id +1)) if start_id <= end_id else list(range(end_id, start_id + 1))
+if start_id > end_id:
+    id_range.reverse()
+project_id_queue_full: list[str] = [str(project_id) for project_id in id_range]
+# 扣除all_projects已经存在的项目
+project_id_queue = [project_id for project_id in project_id_queue_full if project_id not in all_projects_set]
+# 扣除invalid_project_ids
+project_id_queue = [project_id for project_id in project_id_queue if project_id not in invalid_project_ids]
+# logging.info(project_id_queue)
+print(f"共计{len(project_id_queue_full)}个项目，其中{len(project_id_queue)}个项目需要爬取")
+time.sleep(1)
+if not input("开始？[y/n]") == 'y':
+    exit(0)
 
 # 新增保存invalid_project_ids的函数
 def save_invalid_project_ids():
@@ -75,11 +94,11 @@ def extract_project_content(project_id: str, i: int):
         url = f"{base_url}{project_id}"
         response = requests.get(url, headers=headers)
         if response.status_code == 404:
-            logging.info(f"[{i + 1}/{len(all_projects)}] project: {project_id} 项目不存在，已加入忽略列表")
+            logging.info(f"[{i + 1}/{len(project_id_queue)}] project: {project_id} 项目不存在，已加入忽略列表")
             invalid_project_ids.add(project_id)
             return
         if response.status_code != 200:
-            logging.error(f"[{i + 1}/{len(all_projects)}] project: {project_id} 请求出现意外情况，状态码: {response.status_code}。可能是网络情况出错或被服务器拒绝，不代表项目不存在。")
+            logging.error(f"[{i + 1}/{len(project_id_queue)}] project: {project_id} 请求出现意外情况，状态码: {response.status_code}。可能是网络情况出错或被服务器拒绝，不代表项目不存在。")
             return
         html_content = response.text
         soup = BeautifulSoup(html_content, 'html.parser')
@@ -124,13 +143,13 @@ def extract_project_content(project_id: str, i: int):
             json.dump(output_data, f, ensure_ascii=False, indent=4)
 
         if len(output_data['main_content']) == 0:
-            logging.warning(f"[{i + 1}/{len(all_projects)}] project: {project_id} no main_content")
+            logging.warning(f"[{i + 1}/{len(project_id_queue)}] project: {project_id} no main_content")
         if len(output_data['image_gallery']) == 0:
-            logging.warning(f"[{i + 1}/{len(all_projects)}] project: {project_id} no image_gallery")
-        logging.info(f"[{i + 1}/{len(all_projects)}] project: {project_id} success")
+            logging.warning(f"[{i + 1}/{len(project_id_queue)}] project: {project_id} no image_gallery")
+        logging.info(f"[{i + 1}/{len(project_id_queue)}] project: {project_id} success")
 
     except Exception as e:
-        logging.error(f'[{i + 1}/{len(all_projects)}] project {project_id} error: {str(e)}')
+        logging.error(f'[{i + 1}/{len(project_id_queue)}] project {project_id} error: {str(e)}')
 
 
 def extract_project_gallery(project_id, gallery_soup) -> list[dict]:
@@ -150,37 +169,18 @@ def extract_project_gallery(project_id, gallery_soup) -> list[dict]:
 
 
 def main():
-    logging.info(f"正在扫描本地文件...")
-
-    # 获取用户输入的开始和结束project id序号
-    start_id = int(input("请输入开始的project id序号: "))
-    end_id = int(input("请输入结束的project id序号: "))
-
-    # 转换为str列表
-    id_range = list(range(start_id, end_id +1)) if start_id <= end_id else list(range(end_id, start_id + 1))
-    if start_id > end_id:
-        id_range.reverse()
-    project_id_queue_full: list[str] = [str(project_id) for project_id in id_range]
-    # 扣除all_projects已经存在的项目
-    project_id_queue = [project_id for project_id in project_id_queue_full if project_id not in all_projects]
-    # 扣除invalid_project_ids
-    project_id_queue = [project_id for project_id in project_id_queue if project_id not in invalid_project_ids]
-    logging.info(project_id_queue)
-    logging.info(f"共计{len(project_id_queue_full)}个项目，其中{len(project_id_queue)}个项目需要爬取")
-    time.sleep(1)
-    if not input("开始？[y/n]") == 'y':
-        exit(0)
     logging.info("开始爬取页面内容...")
 
     # 启动定时保存任务
     timer_save_invalid_project_ids()
 
     # 使用ThreadPoolExecutor进行并发爬取
-    with ThreadPoolExecutor(max_workers=32) as executor:
+    with ThreadPoolExecutor(max_workers=64) as executor:
         futures = [executor.submit(extract_project_content, project_id, i) for i, project_id in enumerate(project_id_queue)]
-        for future in as_completed(futures):
+        # for future in as_completed(futures):
+        #     future.result()
+        for future in tqdm(as_completed(futures), total=len(futures)):
             future.result()
-
     # 程序退出前保存一次
     save_invalid_project_ids()
 
