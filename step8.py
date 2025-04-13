@@ -58,14 +58,14 @@ logging.info(f"{len(rows_to_process)} rows need to be processed. total = {len(df
 time.sleep(1)
 
 logging.info('Loading cn_clip Model...')
-from apis.cn_clip_api import get_features
+from apis.cn_clip_api import get_image_features
 
 
 def process_row(index, row, df):
     image_path = row['image_path']
     try:
         image = Image.open(image_path)
-        feature_vector = get_features(image)
+        feature_vector = get_image_features(image)
         df.at[index, 'cn_clip_vector'] = feature_vector
     except Exception as e:
         logging.error(f'Error processing {image_path}: {e}')

@@ -39,7 +39,7 @@ def compute_image_features(image) -> np.ndarray:
         image = Image.open(image)
 
     # 计算特征向量
-    feature_vector = cn_clip_api.get_features(image)
+    feature_vector = cn_clip_api.get_image_features(image)
 
     # 确保 feature_vector 是二维数组
     if feature_vector.ndim == 1:
@@ -51,7 +51,7 @@ def compute_image_features(image) -> np.ndarray:
 # 计算文本特征向量（dummy函数）
 def compute_text_features(text):
     # 计算特征向量
-    feature_vector = cn_clip_api.get_features_by_text(text)
+    feature_vector = cn_clip_api.get_text_features(text)
 
     # 确保 feature_vector 是二维数组
     if feature_vector.ndim == 1:
@@ -106,7 +106,7 @@ with gr.Blocks() as iface:
             # 添加卷展栏到左半部分
             with gr.Accordion("高级参数", open=False):
                 top_k_slider = gr.Slider(1, 50, value=10, step=1, label="Top K 数量")
-                image_weight_slider = gr.Slider(0, 1, value=0.5, step=0.1, label="图像权重")
+                image_weight_slider = gr.Slider(0, 1, value=0.8, step=0.1, label="图像权重")
                 text_weight_slider = gr.Slider(0, 1, value=0.3, step=0.1, label="正向提示文本权重")
                 negative_text_weight_slider = gr.Slider(0, 1, value=0.2, step=0.1, label="负向提示文本权重")
             
