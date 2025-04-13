@@ -1,5 +1,5 @@
 import os
-
+import peft
 import torch
 from PIL import Image
 from transformers import AutoModel, CLIPImageProcessor

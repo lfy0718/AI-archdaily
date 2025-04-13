@@ -11,8 +11,8 @@ def load_database():
     df = pd.read_pickle(pkl_path)
 
     # 过滤并展平向量
-    df = df[df['cn_clip_vector'].apply(lambda x: isinstance(x, np.ndarray))]
-    df['cn_clip_vector'] = df['cn_clip_vector'].apply(
+    df = df[df['features'].apply(lambda x: isinstance(x, np.ndarray))]
+    df['features'] = df['features'].apply(
         lambda x: x.squeeze()  # 去除单维度
     )
     return df
@@ -21,7 +21,7 @@ def load_database():
 # 在程序启动时加载DataFrame
 df = load_database()
 print(f"成功加载 {len(df)} 条有效数据")  # 添加验证输出
-image_features: np.ndarray = np.stack(df['cn_clip_vector'].values)
+image_features: np.ndarray = np.stack(df['features'].values)
 print(image_features.shape)
 
 
@@ -190,4 +190,4 @@ def format_gallery_output(result_list):
 
 
 if __name__ == "__main__":
-    iface.launch(share=False)  # 设置 share=True 以创建公共链接
+    iface.launch(share=True)  # 设置 share=True 以创建公共链接
