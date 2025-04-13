@@ -1,7 +1,10 @@
 import os
 
+import PIL
+import numpy as np
 import torch
 from PIL import Image
+import cn_clip.clip as clip
 from cn_clip.clip import load_from_name, available_models
 
 print("Available models:", available_models())
@@ -16,11 +19,20 @@ model, preprocess = load_from_name("ViT-H-14",
 model.eval()
 
 
-def get_features(image_path):
-    image = preprocess(Image.open(image_path)).unsqueeze(0).to(device)
+def get_features(image: PIL.Image.Image) -> np.ndarray:
+    image_tensor = preprocess(image).unsqueeze(0).to(device)
 
     with torch.no_grad():
-        image_features = model.encode_image(image)
+        image_features = model.encode_image(image_tensor)
         # 对特征进行归一化，请使用归一化后的图文特征用于下游任务
         image_features /= image_features.norm(dim=-1, keepdim=True)
         return image_features.detach().cpu().numpy()  # 返回numpy格式
+
+
+def get_features_by_text(text: str) -> np.ndarray:
+    text_tensor = clip.tokenize([text]).to(device)
+    with torch.no_grad():
+        text_features = model.encode_text(text_tensor)
+        # 对特征进行归一化，请使用归一化后的图文特征用于下游任务
+        text_features /= text_features.norm(dim=-1, keepdim=True)
+        return text_features.detach().cpu().numpy()
