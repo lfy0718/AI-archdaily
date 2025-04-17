@@ -1,0 +1,15 @@
+pillow==10.0.1
+numpy==1.26.4
+torch==2.1.0+cu121
+torchvision==0.16.0+cu121
+transformers==4.38.2
+peft~=0.13.0
+requests
+beautifulsoup4
+tqdm
+pandas
+moderngl-window==2.4.5
+moderngl
+gradio==4.44.1
+scikit-learn==1.6.1
+imgui[full]

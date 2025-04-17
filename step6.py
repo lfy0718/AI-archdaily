@@ -4,7 +4,7 @@ import logging
 import os
 import random
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from datetime import datetime
 
 import requests
@@ -102,6 +102,6 @@ def download_image(json_file_path, i):
 
 # 使用ThreadPoolExecutor进行并发下载
 with ThreadPoolExecutor(max_workers=32) as executor:
-    futures = [executor.submit(download_image, json_file_path, i) for i, json_file_path in enumerate(json_path_queue)]
+    futures: list[Future] = [executor.submit(download_image, json_file_path, i) for i, json_file_path in enumerate(json_path_queue)]
     for future in as_completed(futures):
         future.result()

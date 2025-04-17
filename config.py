@@ -2,6 +2,11 @@
 # @Author  : Yiheng Feng
 # @Time    : 4/12/2025 10:06 AM
 # @Function:
+
+base_url = "https://www.archdaily.com/"
+projects_dir = './results/projects'
+invalid_project_ids_path = './results/invalid_project_ids.json'
+
 headers = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
     "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -18,4 +23,9 @@ headers = {
     "Sec-Fetch-User": "?1",
     "Upgrade-Insecure-Requests": "1",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36 Edg/135.0.0.0"
+}
+ignore_keywords = {
+    "Projects", "Images", "Products", "Folders", "AD Plus",
+    "Benefits", "Archive", "Content", "Maps", "Audio",
+    "Check the latest Chairs", "Check the latest Counters"
 }
