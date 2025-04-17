@@ -13,3 +13,5 @@ moderngl
 gradio==4.44.1
 scikit-learn==1.6.1
 imgui[full]
+comtypes
+pyperclip

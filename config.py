@@ -29,3 +29,6 @@ ignore_keywords = {
     "Benefits", "Archive", "Content", "Maps", "Audio",
     "Check the latest Chairs", "Check the latest Counters"
 }
+
+PROJECT_NAME = "AI-Archdaily"
+RESOURCES_DIR= "./resources"

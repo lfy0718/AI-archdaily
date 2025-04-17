@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import random
+import time
 import traceback
 
 import requests
@@ -13,12 +15,14 @@ _flush_threshold = 64
 
 from enum import IntFlag, auto
 
+
 class Flags(IntFlag):
     NONE = 0
     FORCE_UPDATE_MAIN_CONTENT = auto()  # 0x0001
     FORCE_UPDATE_IMAGE_GALLERY = auto()  # 0x0010
     FORCE_UPDATE_TITLE = auto()  # 0x0100
     FORCE_UPDATE_TAGS = auto()  # 0x1000
+
 
 def _add_to_success_queue(queue_name: str, project_id: str):
     queue = _success_queues[queue_name]
@@ -37,7 +41,7 @@ def flush_success_queue(queue_name: str):
 
 
 def request_project_html(project_id: str, i: int, total: int, invalid_project_ids: set[str],
-                         force_update: bool = False):
+                         force_update: bool = False) -> bool:
     """
     请求project的id并保存到本地
     :param force_update: 强制重新爬取
@@ -50,34 +54,36 @@ def request_project_html(project_id: str, i: int, total: int, invalid_project_id
     url = f"{base_url}{project_id}"
     html_file_path = os.path.join(projects_dir, project_id, "content.html")
     if os.path.isfile(html_file_path) and not force_update:
-        return
+        return False
     if project_id in invalid_project_ids:
-        return
+        return False
     try:
         response = requests.get(url, headers=headers, timeout=60)
         if response.status_code == 404:
             invalid_project_ids.add(project_id)
-            return
+            return False
         if response.status_code != 200:
             logging.error(f"[{i + 1}/{total}] project: {project_id} 请求出现意外情况，状态码: {response.status_code}。")
-            return
+            return False
         html_content: str = response.text
         os.makedirs(os.path.dirname(html_file_path), exist_ok=True)
         with open(html_file_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
         _add_to_success_queue('content_html', project_id)
+        return True
     except Exception as e:
         logging.error(f"[{i + 1}/{total}] project: {project_id} 请求出现意外情况, error: {str(e)}")
+        return False
 
 
-def parse_project_content(project_id: str, i: int, total: int, flags: Flags = Flags.NONE):
-
+def parse_project_content(project_id: str, i: int, total: int, flags: Flags = Flags.NONE) -> bool:
     html_file_path = os.path.join(projects_dir, project_id, "content.html")
     json_file_path = os.path.join(projects_dir, project_id, "content.json")
     if not os.path.isfile(html_file_path):
         logging.warning(f"[{i + 1}/{total}] project: {project_id} html文件不存在, 请先获取html文件")
-        return
+        return False
     soup = None
+
     def get_soup():
         """延迟get"""
         nonlocal soup
@@ -135,12 +141,14 @@ def parse_project_content(project_id: str, i: int, total: int, flags: Flags = Fl
                 with open(json_file_path, 'w', encoding='utf-8') as f:
                     json.dump(output_data, f, ensure_ascii=False, indent=4)
                 _add_to_success_queue('content_json', project_id)
+                return True
         except Exception as e:
             logging.error(f'[{i + 1}/{total}] project {project_id} 保存文件时发生错误 error: {str(e)}')
             traceback.print_exc()
             exit(1)
     except Exception as e:
         logging.error(f'[{i + 1}/{total}] project {project_id} error: {str(e)}')
+    return False
 
 
 def extract_main_content(project_id: str, soup) -> tuple[bool, list[dict]]:
@@ -246,3 +254,46 @@ def extract_tags(project_id: str, soup) -> tuple[bool, list[str]]:
         logging.error(f'project {project_id} 解析tags时发生错误, error: {str(e)}')
         return False, []
 
+
+def download_images(project_id, i, total, image_size_type="large", img_index_change_callback = None) -> bool:
+    folder_path = os.path.join(projects_dir, project_id)
+    json_file_path = os.path.join(projects_dir, project_id, "content.json")
+    if not os.path.isfile(json_file_path):
+        logging.error(f'[{i}/{total}] project {project_id} content.json not exist')
+        return False
+    try:
+        with open(json_file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception as e:
+        logging.error(f'[{i}/{total}] project {project_id} cannot load json, error: {str(e)}')
+        return False
+
+    image_gallery_images = data.get('image_gallery', [])
+    for img_index, image_gallery_image in enumerate(image_gallery_images):
+        try:
+            if img_index_change_callback:
+                img_index_change_callback(project_id, img_index, len(image_gallery_images))
+            img_path = os.path.join(folder_path, 'image_gallery', image_size_type, f'{str(img_index).zfill(5)}.jpg')
+            os.makedirs(os.path.dirname(img_path), exist_ok=True)
+            if os.path.isfile(img_path):
+                # logging.info(f'[{i}/{total}][{img_index}/{len(image_gallery_images)}] image_gallery image exist for project {project_id}')
+                continue
+            img_url = image_gallery_image.get(f'url_{image_size_type}')
+            if not img_url:
+                logging.warning(f'[{i}/{total}] No url_{image_size_type} found for project {project_id}')
+
+            response = requests.get(img_url, timeout=60)
+            if response.status_code == 200:
+                with open(img_path, 'wb') as img_file:
+                    img_file.write(response.content)
+                logging.info(
+                    f'[{i}/{total}][{img_index}/{len(image_gallery_images)}] success for project {project_id}')
+            else:
+                logging.warning(f'[{i}/{total}][{img_index}/{len(image_gallery_images)}] Failed to '
+                                f'download image for project {project_id}, code {response.status_code}')
+
+        except Exception as e:
+            logging.error(
+                f'[{i}/{total}][{img_index}/{len(image_gallery_images)}] project {project_id} error: {str(e)}')
+        time.sleep(random.random() * 0.2)
+    return True
