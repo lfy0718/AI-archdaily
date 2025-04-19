@@ -9,9 +9,9 @@ if sys.platform == "win32":
     import win32ui
     from ctypes import POINTER, byref, cast, windll, c_void_p, c_wchar_p
     from ctypes.wintypes import SIZE, UINT, HANDLE, HBITMAP
-from PIL import Image
-from comtypes import GUID, IUnknown, COMMETHOD, HRESULT
+    from comtypes import GUID, IUnknown, COMMETHOD, HRESULT
 
+from PIL import Image
 from dev.global_app_state import g
 
 
