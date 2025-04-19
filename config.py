@@ -2,6 +2,7 @@
 # @Author  : Yiheng Feng
 # @Time    : 4/12/2025 10:06 AM
 # @Function:
+import atexit
 import json
 import logging
 import os
@@ -39,6 +40,8 @@ class UserSettings:
             "Benefits", "Archive", "Content", "Maps", "Audio",
             "Check the latest Chairs", "Check the latest Counters"
         }
+        self.mongodb_host = 'mongodb://localhost:32769/?directConnection=true'
+        self.mongodb_db_name = 'AI-Archdaily'
 
 
 def load_user_settings(_user_settings: UserSettings) -> None:
@@ -77,3 +80,5 @@ def save_user_settings(_user_settings: UserSettings) -> None:
 
 user_settings: UserSettings = UserSettings()
 load_user_settings(user_settings)  # load user settings on start
+
+atexit.register(save_user_settings, user_settings)
