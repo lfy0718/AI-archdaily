@@ -2,6 +2,7 @@
 # @Author  : Yiheng Feng
 # @Time    : 3/28/2025 10:47 AM
 # @Function:
+import os
 import threading
 import time
 from concurrent.futures import Future
@@ -201,7 +202,9 @@ class ScraperWindow(PopupWindow):
         if cls._is_working:
             logging.warning("其他任务正在进行...")
             return
-
+        if not os.path.isdir(user_settings.projects_dir):
+            logging.warning(f"项目文件夹不存在: {user_settings.projects_dir}")
+            return
         def _scan_projects_folder():
             cls._is_working = True
             cls._working_context = "Step1-scan1"
@@ -238,6 +241,7 @@ class ScraperWindow(PopupWindow):
         if cls._is_working:
             logging.warning("其他任务正在进行...")
             return
+        os.makedirs(user_settings.projects_dir, exist_ok=True)
 
         def _get_valid_project_ids():
             cls._is_working = True
@@ -281,7 +285,9 @@ class ScraperWindow(PopupWindow):
         if cls._is_working:
             logging.warning("其他任务正在进行...")
             return
-
+        if not os.path.isdir(user_settings.projects_dir):
+            logging.warning(f"项目文件夹不存在: {user_settings.projects_dir}")
+            return
         def _scan_projects_folder():
             cls._is_working = True
             cls._working_context = "Step2-scan"
@@ -327,7 +333,9 @@ class ScraperWindow(PopupWindow):
         if cls._is_working:
             logging.warning("其他任务正在进行...")
             return
-
+        if not os.path.isdir(user_settings.projects_dir):
+            logging.warning(f"项目文件夹不存在: {user_settings.projects_dir}")
+            return
         def _scan_projects_folder():
             cls._is_working = True
             cls._working_context = "Step3-scan"

@@ -12,7 +12,7 @@ from dev.windows import WindowManager
 
 class WindowEvents(mglw.WindowConfig):
     # SOME SETTINGS FOR WINDOW
-    gl_version = (4, 2)  # use opengl 4.2
+    gl_version = (3, 3)  # use opengl 4.2
     title = PROJECT_NAME
     aspect_ratio = None
     vsync = True

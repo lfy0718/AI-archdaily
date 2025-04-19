@@ -24,8 +24,8 @@ if path not in sys.path:
 # We use imgui and moderngl_window to render the gui and window, the backend by default is pyglet
 
 # Set DPI scaling, the following two lines can be disabled
-import ctypes
 if sys.platform == "win32":
+    import ctypes
     ctypes.windll.user32.SetProcessDPIAware()
 
 from dev.window_events import WindowEvents
