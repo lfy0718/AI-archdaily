@@ -1,17 +1,11 @@
 # Step5： 爬取项目的页面内容及Image Gallery信息，保存为content.json， 分为两个list， {'main_content': [], 'image_gallery': []}， 支持并发下载
-import json
-import logging
-import os
-from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import requests
-from bs4 import BeautifulSoup
 from tqdm import tqdm
 
 from config import *
-from utils.logging_utils import init_logger
 from utils.html_utils import request_project_html, flush_success_queue
+from utils.logging_utils import init_logger
 
 init_logger('step5_1')
 
@@ -21,12 +15,12 @@ def main():
         "本程序将从已有的文件夹中，查找是否存在content.html文件，如果不存在，则爬取页面内容，并保存为content.html文件")
     logging.info(f"正在扫描本地文件...")
 
-    all_projects = os.listdir(projects_dir)
+    all_projects = os.listdir(user_settings.projects_dir)
     project_id_queue: list[str] = []
 
     # 遍历项目目录下的所有子文件夹
     for project_id in tqdm(all_projects):
-        folder_path = os.path.join(projects_dir, project_id)
+        folder_path = os.path.join(user_settings.projects_dir, project_id)
         if os.path.isdir(folder_path):
             html_file_path = os.path.join(folder_path, f'content.html')  # 扫描是否有content.html
             if not os.path.exists(html_file_path):
@@ -53,6 +47,7 @@ def main():
 
     if _invalid_project_ids:
         logging.warning(f"这些项目为404，请检查原因：{_invalid_project_ids}")
+
 
 if __name__ == '__main__':
     main()

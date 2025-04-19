@@ -9,6 +9,7 @@ import imgui
 from config import *
 from dev.components import c
 from dev.global_app_state import g
+from dev.modules import StyleModule
 from dev.windows.base_window import PopupWindow
 
 
@@ -46,7 +47,7 @@ class StateInfoWindow(PopupWindow):
         imgui.text("状态信息：")
         imgui.text(f"alive workers： {g.mAliveWorkers}")
 
-        c.begin_child("alive projects", height=200 * g.global_scale, bg_color=(0, 0, 0, 0.2))
+        c.begin_child("alive projects", height=200 * g.global_scale, bg_color=StyleModule.COLOR_CHILD_BG)
         c.bold_text("这些项目正在工作：")
 
         imgui.push_style_var(imgui.STYLE_ITEM_SPACING, (1, 1))
@@ -62,13 +63,13 @@ class StateInfoWindow(PopupWindow):
             project_id: str = project_id
             opened, selected = imgui.selectable(f"{project_id.ljust(10, ' ')} {sub_progress_str.ljust(10, ' ')} {(curr_time - start_time):.0f}s")
             if opened:
-                os.startfile(os.path.join(projects_dir, project_id))
+                os.startfile(os.path.join(config_projects_dir, project_id))
         imgui.pop_style_var()
         c.end_child()
 
         imgui.separator()
 
-        c.begin_child("success projects", height=200 * g.global_scale, bg_color=(0, 0, 0, 0.2))
+        c.begin_child("success projects", height=200 * g.global_scale, bg_color=StyleModule.COLOR_CHILD_BG)
         c.bold_text(f"{len(g.mSuccessProjects)}项目被标记为成功：")
         imgui.push_style_var(imgui.STYLE_ITEM_SPACING, (1, 1))
         total = min(len(g.mSuccessProjects), cls._max_count)
@@ -77,6 +78,6 @@ class StateInfoWindow(PopupWindow):
             project_id = g.mSuccessProjects[-(i + 1)]
             opened, selected = imgui.selectable(f"{project_id}")
             if opened:
-                os.startfile(os.path.join(projects_dir, project_id))
+                os.startfile(os.path.join(config_projects_dir, project_id))
         imgui.pop_style_var()
         c.end_child()

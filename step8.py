@@ -1,14 +1,14 @@
 # 使用cn_clip补全image_database中尚未计算的图片特征向量
 import logging
 import os
-import time
-import pandas as pd
-from datetime import datetime
 import shutil
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 
+import pandas as pd
 from PIL import Image
 from tqdm import tqdm
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import apis.cn_clip_api
 
@@ -36,7 +36,6 @@ logger.setLevel(logging.INFO)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
-
 database_name = "image_database"
 get_features_func = apis.cn_clip_api.get_image_features
 
@@ -63,8 +62,6 @@ logging.info(f"{len(rows_to_process)} rows need to be processed. total = {len(df
 time.sleep(1)
 
 
-
-
 def process_row(index, row, df):
     image_path = row['image_path']
     try:
@@ -84,4 +81,3 @@ with ThreadPoolExecutor(max_workers=32) as executor:  # 根据显存设置
 # 保存更新后的DataFrame
 df.to_pickle(pkl_path)
 logging.info(f'{database_name}.pkl updated. {pkl_path}')
-

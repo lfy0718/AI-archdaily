@@ -14,9 +14,9 @@ def main():
     logging.info(f"本程序将扫描所有项目的content.html， 并将其内容增量解析到content.json")
     logging.info(f"正在扫描本地文件...")
     project_id_queue = []
-    all_projects = os.listdir(projects_dir)
+    all_projects = os.listdir(user_settings.projects_dir)
     for project_id in all_projects:
-        html_file_path = os.path.join(projects_dir, project_id, 'content.html')
+        html_file_path = os.path.join(user_settings.projects_dir, project_id, 'content.html')
         if os.path.exists(html_file_path):
             project_id_queue.append(project_id)
     if len(all_projects) - len(project_id_queue) > 0:

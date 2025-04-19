@@ -703,10 +703,10 @@ class Components:
             flag |= imgui.INPUT_TEXT_READ_ONLY
         changed, value = Components.input_text('', value, flag)
 
-        if imgui.is_item_hovered() and len(g.mUserDroppedFiles) > 0:
-            logging.info(f"file dropped to {label}, {g.mUserDroppedFiles[0]}")
-            value = g.mUserDroppedFiles[0]
-            changed = True
+        # if imgui.is_item_hovered() and len(g.mUserDroppedFiles) > 0:
+        #     logging.info(f"file dropped to {label}, {g.mUserDroppedFiles[0]}")
+        #     value = g.mUserDroppedFiles[0]
+        #     changed = True
         any_change |= changed
         imgui.same_line()
         if imgui.button('...', width=35 * g.global_scale):

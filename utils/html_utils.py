@@ -51,14 +51,14 @@ def request_project_html(project_id: str, i: int, total: int, invalid_project_id
     :param invalid_project_ids:
     :return:
     """
-    url = f"{base_url}{project_id}"
-    html_file_path = os.path.join(projects_dir, project_id, "content.html")
+    url = f"{user_settings.base_url}{project_id}"
+    html_file_path = os.path.join(user_settings.projects_dir, project_id, "content.html")
     if os.path.isfile(html_file_path) and not force_update:
         return False
     if project_id in invalid_project_ids:
         return False
     try:
-        response = requests.get(url, headers=headers, timeout=60)
+        response = requests.get(url, headers=user_settings.headers, timeout=60)
         if response.status_code == 404:
             invalid_project_ids.add(project_id)
             return False
@@ -77,8 +77,8 @@ def request_project_html(project_id: str, i: int, total: int, invalid_project_id
 
 
 def parse_project_content(project_id: str, i: int, total: int, flags: Flags = Flags.NONE) -> bool:
-    html_file_path = os.path.join(projects_dir, project_id, "content.html")
-    json_file_path = os.path.join(projects_dir, project_id, "content.json")
+    html_file_path = os.path.join(user_settings.projects_dir, project_id, "content.html")
+    json_file_path = os.path.join(user_settings.projects_dir, project_id, "content.json")
     if not os.path.isfile(html_file_path):
         logging.warning(f"[{i + 1}/{total}] project: {project_id} html文件不存在, 请先获取html文件")
         return False
@@ -164,7 +164,7 @@ def extract_main_content(project_id: str, soup) -> tuple[bool, list[dict]]:
             if element.name == 'p':
                 # 提取<p>标签中的文本，忽略<a>标签
                 text = element.get_text().strip()  # 去除前后空白字符
-                if (not text) or (text in seen) or (text in ignore_keywords) or (len(text) <= 10):
+                if (not text) or (text in seen) or (text in user_settings.ignore_keywords) or (len(text) <= 10):
                     continue
                 # 如果内容非空且长度大于等于20且未出现过且不在忽略列表中
                 seen.add(text)  # 记录到seen中
@@ -196,8 +196,8 @@ def extract_image_gallery(project_id, soup) -> tuple[bool, list[dict]]:
             return True, []
         gallery_url = gallery_thumbs_link['href']
         if gallery_url.startswith("/"):
-            gallery_url = base_url + gallery_url[1:]
-        gallery_response = requests.get(gallery_url, headers=headers)
+            gallery_url = user_settings.base_url + gallery_url[1:]
+        gallery_response = requests.get(gallery_url, headers=user_settings.headers)
         gallery_html_content = gallery_response.text
         gallery_soup = BeautifulSoup(gallery_html_content, 'html.parser')
         gallery_items = gallery_soup.find('div', id='gallery-items', class_='afd-gal-items')
@@ -256,8 +256,8 @@ def extract_tags(project_id: str, soup) -> tuple[bool, list[str]]:
 
 
 def download_images(project_id, i, total, image_size_type="large", img_index_change_callback = None) -> bool:
-    folder_path = os.path.join(projects_dir, project_id)
-    json_file_path = os.path.join(projects_dir, project_id, "content.json")
+    folder_path = os.path.join(user_settings.projects_dir, project_id)
+    json_file_path = os.path.join(user_settings.projects_dir, project_id, "content.json")
     if not os.path.isfile(json_file_path):
         logging.error(f'[{i}/{total}] project {project_id} content.json not exist')
         return False

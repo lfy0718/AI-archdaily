@@ -5,9 +5,6 @@ import os
 from datetime import datetime
 
 import pandas as pd
-import hashlib
-
-from tqdm import tqdm
 
 # 配置日志
 log_dir = f'./log/step7'
@@ -37,6 +34,8 @@ projects_dir = 'results/projects'
 output_dir = 'results/database'
 image_size_type = 'large'  # 可选项：large, slideshow, medium
 database_name = "image_database"
+
+
 def main(incremental=True):
     image_database = []
 
@@ -89,7 +88,8 @@ def main(incremental=True):
                 'project_id': project_folder
             })
         if image_missing_count > 0:
-            logging.warning(f"[{project_folder}] image_gallery/{image_size_type} is missing {image_missing_count} images, total {len(image_gallery_images)}")
+            logging.warning(
+                f"[{project_folder}] image_gallery/{image_size_type} is missing {image_missing_count} images, total {len(image_gallery_images)}")
 
     # 创建DataFrame并保存
     df = pd.DataFrame(image_database)

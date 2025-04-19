@@ -5,9 +5,8 @@ from typing import Optional
 import imgui
 import moderngl
 
-import dev.windows  # avoid circulate import
 from dev.global_app_state import g
-from dev.modules import DrawingModule, StyleModule
+from dev.modules import StyleModule
 
 
 class BaseWindow:
@@ -42,7 +41,6 @@ class PopupWindow(BaseWindow):
     _position = (0, 0)
     _size = (0, 0)
 
-
     @classmethod
     @abstractmethod
     def w_init(cls):
@@ -59,7 +57,6 @@ class PopupWindow(BaseWindow):
     @abstractmethod
     def w_update(cls):
         pass
-
 
     @classmethod
     def w_show(cls, **kwargs):
@@ -85,7 +82,8 @@ class PopupWindow(BaseWindow):
         cls._position = imgui.get_window_position()
         cls._size = imgui.get_window_size()
 
-        cls._active = imgui.is_window_focused(imgui.HOVERED_ALLOW_WHEN_BLOCKED_BY_POPUP | imgui.HOVERED_ROOT_AND_CHILD_WINDOWS)
+        cls._active = imgui.is_window_focused(
+            imgui.HOVERED_ALLOW_WHEN_BLOCKED_BY_POPUP | imgui.HOVERED_ROOT_AND_CHILD_WINDOWS)
 
         # show main content
         cls.w_content()
@@ -105,7 +103,6 @@ class PopupWindow(BaseWindow):
             cls.w_close()
             return
 
-
     @classmethod
     @abstractmethod
     def w_open(cls):
@@ -115,6 +112,7 @@ class PopupWindow(BaseWindow):
     @abstractmethod
     def w_close(cls):
         cls._opened = False
+
     @classmethod
     def w_before_window_begin(cls):
         pass
@@ -143,7 +141,6 @@ class PopupWindow(BaseWindow):
     @classmethod
     def get_rect_max(cls) -> tuple[int, int]:
         return cls._position[0] + cls._size[0], cls._position[1] + cls._size[1]
-
 
     @classmethod
     def _on_blurred_bg_complete(cls, tex: moderngl.Texture):

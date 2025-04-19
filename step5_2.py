@@ -26,7 +26,7 @@ complete = False
 
 
 def save_invalid_project_ids():
-    with open(invalid_project_ids_path, 'w', encoding='utf-8') as f:
+    with open(user_settings.invalid_project_ids_path, 'w', encoding='utf-8') as f:
         logging.info("保存invalid_project_ids")
         json.dump(list(invalid_project_ids), f, ensure_ascii=False, indent=4)
 
@@ -50,7 +50,7 @@ def main():
         id_range.reverse()
     project_id_queue_full: list[str] = [str(project_id) for project_id in id_range]
     # 扣除all_projects已经存在的项目
-    all_projects_set = set(os.listdir(projects_dir))
+    all_projects_set = set(os.listdir(user_settings.projects_dir))
     project_id_queue = [project_id for project_id in project_id_queue_full if project_id not in all_projects_set]
     # 扣除invalid_project_ids
     project_id_queue = [project_id for project_id in project_id_queue if project_id not in invalid_project_ids]

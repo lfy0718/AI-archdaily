@@ -8,6 +8,7 @@ from dev.utils import color_utils
 
 
 class StyleModule(BaseModule):
+    # region colors
     COLOR_LIGHT_GRAY = (0.7, 0.7, 0.7, 1.0)
     COLOR_GRAY = (0.5, 0.5, 0.5, 1.0)
     COLOR_DARK_GRAY = (0.25, 0.25, 0.25, 1.0)
@@ -46,6 +47,8 @@ class StyleModule(BaseModule):
     COLOR_PRIMARY_LIGHTENED = color_utils.lighten_color(COLOR_PRIMARY, 0.1)
     COLOR_DANGER_LIGHTENED = color_utils.lighten_color(COLOR_DANGER, 0.1)
 
+    COLOR_CHILD_BG = (0, 0, 0, 0.05)
+    # endregion
     _imgui_color_key_to_name = {
         0: "COLOR_TEXT",
         1: "COLOR_TEXT_DISABLED",
@@ -107,19 +110,10 @@ class StyleModule(BaseModule):
     def m_init(cls):
         super().m_init()
 
-        # from dev.modules import EventModule
-        # EventModule.register_global_scale_change_callback(cls._on_global_scale_changed)
-        # EventModule.register_dark_mode_change_callback(cls._on_dark_mode_changed)
-
         style: imgui.core.GuiStyle = imgui.get_style()
         g.mImguiStyle = style
 
-
-
-
-        cls._init_dark_mode()
-
-
+        cls._init_light_mode()
         cls._init_imgui_style()
 
     @classmethod
@@ -213,7 +207,7 @@ class StyleModule(BaseModule):
         style.colors[imgui.COLOR_CHECK_MARK] = (0.26, 0.59, 0.98, 1.00)
         style.colors[imgui.COLOR_SLIDER_GRAB] = (0.24, 0.52, 0.88, 1.00)
         style.colors[imgui.COLOR_SLIDER_GRAB_ACTIVE] = (0.26, 0.59, 0.98, 1.00)
-        style.colors[imgui.COLOR_BUTTON] = (0.84, 0.84, 0.84, 1.00)
+        style.colors[imgui.COLOR_BUTTON] = (0.80, 0.80, 0.80, 1.00)
         style.colors[imgui.COLOR_BUTTON_HOVERED] = (0.74, 0.80, 0.87, 1.00)
         style.colors[imgui.COLOR_BUTTON_ACTIVE] = (0.63, 0.70, 0.78, 1.00)
         style.colors[imgui.COLOR_HEADER] = (0.84, 0.84, 0.84, 1.00)
@@ -232,8 +226,8 @@ class StyleModule(BaseModule):
         style.colors[imgui.COLOR_TAB_UNFOCUSED_ACTIVE] = (0.14, 0.26, 0.42, 1.00)
         style.colors[imgui.COLOR_PLOT_LINES] = (0.61, 0.61, 0.61, 1.00)
         style.colors[imgui.COLOR_PLOT_LINES_HOVERED] = (1.00, 0.43, 0.35, 1.00)
-        style.colors[imgui.COLOR_PLOT_HISTOGRAM] = (0.10, 0.40, 0.75, 0.78)
-        style.colors[imgui.COLOR_PLOT_HISTOGRAM_HOVERED] = (0.10, 0.40, 0.75, 1.00)
+        style.colors[imgui.COLOR_PLOT_HISTOGRAM] = (0.63, 0.70, 0.78, 1.00)
+        style.colors[imgui.COLOR_PLOT_HISTOGRAM_HOVERED] = (0.63, 0.70, 0.78, 1.00)
         style.colors[imgui.COLOR_TABLE_HEADER_BACKGROUND] = (0.88, 0.88, 0.88, 1.00)
         style.colors[imgui.COLOR_TABLE_BORDER_STRONG] = (0.73, 0.73, 0.73, 1.00)
         style.colors[imgui.COLOR_TABLE_BORDER_LIGHT] = (0.93, 0.93, 0.93, 1.00)
@@ -250,7 +244,7 @@ class StyleModule(BaseModule):
         cls.COLOR_SECONDARY = cls.COLOR_GRAY
         cls.COLOR_SUCCESS = cls.COLOR_GREEN
         cls.COLOR_WARNING = cls.COLOR_YELLOW
-        cls.COLOR_DANGER = cls.COLOR_RED
+        cls.COLOR_DANGER = color_utils.lighten_color(cls.COLOR_RED, 0.2)
         cls.COLOR_DISABLED = cls.COLOR_LIGHT_GRAY
         cls.COLOR_DARK_WINDOW_BACKGROUND = color_utils.darken_color(style.colors[imgui.COLOR_WINDOW_BACKGROUND], 0.1)
         cls.COLOR_PRIMARY_LIGHTENED = color_utils.lighten_color(cls.COLOR_PRIMARY, 0.1)

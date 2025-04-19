@@ -10,6 +10,7 @@ from dev.global_app_state import g
 from dev.windows.base_window import BaseWindow, PopupWindow
 from dev.windows.scraper_window import ScraperWindow
 from dev.windows.state_info_window import StateInfoWindow
+from dev.windows.settings_window import SettingsWindow
 
 # NOTE: If you added a new window, import it here.
 
@@ -19,13 +20,15 @@ logger.setLevel(logging.INFO)
 # NOTE: If you added a new window, make sure to add it into ALL_WINDOWS list.
 ALL_WINDOWS: list[Type[BaseWindow]] = [
     ScraperWindow,
-    StateInfoWindow
+    StateInfoWindow,
+    SettingsWindow
 ]
 
 # NOTE: If you added a new popup window, make sure to add it into POPUP_WINDOWS list.
 POPUP_WINDOWS: list[Type[PopupWindow]] = [
     ScraperWindow,
-    StateInfoWindow
+    StateInfoWindow,
+    SettingsWindow
 ]
 
 
@@ -57,11 +60,42 @@ class WindowManager:
         for window in ALL_WINDOWS:
             window.w_update()
 
+    _show_imgui_demo_window = False
     @classmethod
     def w_render(cls):
+        if imgui.begin_main_menu_bar().opened:
+            # first menu dropdown
+            if imgui.begin_menu('File', True).opened:
+                imgui.menu_item('New', 'Ctrl+N', False, True)
+                imgui.menu_item('Open ...', 'Ctrl+O', False, True)
+
+                # submenu
+                if imgui.begin_menu('Open Recent', True).opened:
+                    imgui.menu_item('doc.txt', None, False, True)
+                    imgui.end_menu()
+
+                imgui.end_menu()
+            if imgui.begin_menu("Windows", True).opened:
+                for window in ALL_WINDOWS:
+                    if issubclass(window, PopupWindow):
+                        clicked, state = imgui.menu_item(window.__name__, None, window.is_opened(), True)
+                        if clicked:
+                            if state:
+                                window.w_open()
+                            else:
+                                window.w_close()
+                    else:
+                        imgui.menu_item(window.__name__, None, True, False)
+                _, cls._show_imgui_demo_window = imgui.menu_item("ImGui Demo Window", None, cls._show_imgui_demo_window, True)
+                imgui.end_menu()
+            imgui.end_main_menu_bar()
+
         with imgui.font(g.mFont):
             for window in ALL_WINDOWS:
                 window.w_show()
+
+        if cls._show_imgui_demo_window:
+            imgui.show_demo_window()
 
     @classmethod
     def w_late_update(cls):

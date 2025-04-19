@@ -7,6 +7,7 @@ import time
 import requests
 import logging
 from datetime import datetime
+from config import *
 # 配置日志
 log_dir = f'./log/step1'
 os.makedirs(log_dir, exist_ok=True)
@@ -28,7 +29,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
-from headers import headers
+
 
 base_url = "https://www.archdaily.com/search/api/v1/us/projects"
 pages = list(range(1, 501))
@@ -51,7 +52,7 @@ pages = [page for page in pages if page not in existing_pages]
 # 爬取每个页码的数据并保存为JSON文件
 for page in pages:
     url = f'{base_url}?page={page}'
-    response = requests.get(url, headers=headers, timeout=20)
+    response = requests.get(url, headers=user_settings.headers, timeout=20)
     if response.status_code == 200:
         data = response.json()
         file_name = f'page_{str(page).zfill(5)}.json'

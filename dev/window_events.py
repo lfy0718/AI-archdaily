@@ -1,14 +1,14 @@
-import logging
-
 import imgui
 import moderngl_window as mglw
 from moderngl_window.integrations.imgui import ModernglWindowRenderer
+
 from config import *
-from dev.global_app_state import g
-from dev.components import c
 from dev import modules
+from dev.components import c
+from dev.global_app_state import g
 from dev.modules import FontModule
 from dev.windows import WindowManager
+
 
 class WindowEvents(mglw.WindowConfig):
     # SOME SETTINGS FOR WINDOW
@@ -18,6 +18,7 @@ class WindowEvents(mglw.WindowConfig):
     vsync = True
     log_level = logging.INFO  # set moderngl log level
     resource_dir = RESOURCES_DIR
+    clear_color = (0.8, 0.8, 0.8, 1.0)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -102,6 +103,7 @@ class WindowEvents(mglw.WindowConfig):
         imgui.new_frame()
 
         # 2. GENERATE UI ELEMENTS
+
         WindowManager.w_render()
 
         # 3. render to ctx.screen
@@ -152,6 +154,7 @@ class WindowEvents(mglw.WindowConfig):
             if key == 65507:
                 g.mCtrlDown = False
                 return
+
     def mouse_position_event(self, x, y, dx, dy):
         self.imgui.mouse_position_event(x, y, dx, dy)
 
