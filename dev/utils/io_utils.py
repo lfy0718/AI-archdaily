@@ -6,8 +6,8 @@ from ctypes import POINTER, byref, cast, windll, c_void_p, c_wchar_p
 from ctypes.wintypes import SIZE, UINT, HANDLE, HBITMAP
 from io import StringIO
 from tkinter import filedialog
-
-import win32ui
+if sys.platform == "win32":
+    import win32ui
 from PIL import Image
 from comtypes import GUID, IUnknown, COMMETHOD, HRESULT
 
@@ -43,10 +43,9 @@ class OutputCapture:
 def open_file_dialog(initial_dir=None) -> str:
     if initial_dir is None:
         initial_dir = g.mLastFileDir
-    dlg = win32ui.CreateFileDialog(1)  # 参数 1 表示打开文件对话框
-    dlg.SetOFNInitialDir(initial_dir)  # 设置打开文件对话框中的初始显示目录
-    dlg.DoModal()
-    filepath = dlg.GetPathName()
+    root = tk.Tk()
+    root.withdraw()  # 隐藏根窗口
+    filepath = filedialog.askopenfilename(initialdir=initial_dir)
     if filepath != '':
         g.mLastFileDir = os.path.dirname(filepath)
     return filepath
@@ -55,10 +54,9 @@ def open_file_dialog(initial_dir=None) -> str:
 def save_file_dialog(initial_dir=None) -> str:
     if initial_dir is None:
         initial_dir = g.mLastFileDir
-    dlg = win32ui.CreateFileDialog(0)  # 参数 0 表示保存文件对话框
-    dlg.SetOFNInitialDir(initial_dir)  # 设置保存文件对话框中的初始显示目录
-    dlg.DoModal()
-    filepath = dlg.GetPathName()
+    root = tk.Tk()
+    root.withdraw()  # 隐藏根窗口
+    filepath = filedialog.asksaveasfilename(initialdir=initial_dir)
     if filepath != '':
         g.mLastFileDir = os.path.dirname(filepath)
     return filepath
@@ -97,6 +95,11 @@ LP_IShellItemImageFactory = POINTER(IShellItemImageFactory)
 
 
 def get_file_thumbnail(filename, icon_size) -> Image:
+    # 判断当前操作系统是否为Ubuntu
+    if platform.system() != 'win32':
+        # 返回一个空的PIL Image对象
+        return Image.new('RGB', (icon_size, icon_size), color=(255, 255, 255))
+    
     h_siif = HANDLE()
     hr = shell32.SHCreateItemFromParsingName(filename, 0,
                                              byref(IShellItemImageFactory._iid_), byref(h_siif))

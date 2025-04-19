@@ -25,8 +25,8 @@ if path not in sys.path:
 
 # Set DPI scaling, the following two lines can be disabled
 import ctypes
-
-ctypes.windll.user32.SetProcessDPIAware()
+if sys.platform == "win32":
+    ctypes.windll.user32.SetProcessDPIAware()
 
 from dev.window_events import WindowEvents
 
