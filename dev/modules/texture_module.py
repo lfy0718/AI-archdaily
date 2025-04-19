@@ -81,38 +81,7 @@ class TextureModule(BaseModule):
         simple_texture.write(data)
         return simple_texture
 
-    _font_size = 48
-    _font = ImageFont.truetype(os.path.join(RESOURCES_DIR, 'fonts/arial.ttf'), _font_size)  # 使用 Arial 字体，指定字体大小
 
-    @classmethod
-    def generate_character_thumbnail(cls, character: str) -> str:
-        if character in cls._cached_additional_icons:
-            return character
-        # 使用哈希函数生成一个唯一的数值
-        hash_value = int(hashlib.sha256(character.encode('utf-8')).hexdigest(), 16)
-        # 将哈希值映射到色相范围（0-1）
-        h = hash_value % 256 / 255.0
-        s = 0.85  # Saturation (饱和度)
-        v = 0.80  # Value (明度)
-        # 将 HSV 颜色转换为 RGB 颜色
-        rgb_color = color_utils.hsv_to_rgb(h, s, v)
-        # 添加一个值为 255 的 alpha 通道
-        rgba_color = (*rgb_color, 255)
-
-        # 创建一个空白的 32x32 图像
-        img = Image.new('RGBA', (64, 64), color=(*rgb_color, 0))
-        draw = ImageDraw.Draw(img)
-
-        # 绘制圆角矩形
-        draw.rounded_rectangle(((0, 0), (62, 62)), radius=12, fill=rgba_color, outline=None)
-        # 在中间写入字母
-        text = character
-        x = 15
-        y = 7
-        draw.text((x, y), text, fill='white', font=cls._font)
-        texture = cls.create_texture_from_image(img, f"_character_{character}")
-        cls._cached_additional_icons[character] = texture
-        return character
 
     @classmethod
     def get_folder_thumbnails(cls, folder_path, icon_size=64, add_mode=False, force_update=False) -> dict:
