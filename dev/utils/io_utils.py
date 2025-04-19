@@ -2,12 +2,13 @@ import os
 import shutil
 import sys
 import tkinter as tk
-from ctypes import POINTER, byref, cast, windll, c_void_p, c_wchar_p
-from ctypes.wintypes import SIZE, UINT, HANDLE, HBITMAP
+
 from io import StringIO
 from tkinter import filedialog
 if sys.platform == "win32":
     import win32ui
+    from ctypes import POINTER, byref, cast, windll, c_void_p, c_wchar_p
+    from ctypes.wintypes import SIZE, UINT, HANDLE, HBITMAP
 from PIL import Image
 from comtypes import GUID, IUnknown, COMMETHOD, HRESULT
 
@@ -70,28 +71,28 @@ def open_folder_dialog():
     selected_folder = filedialog.askdirectory()
     return selected_folder
 
+if sys.platform == "win32":
+    shell32 = windll.shell32
+    shell32.SHCreateItemFromParsingName.argtypes = [c_wchar_p, c_void_p, POINTER(GUID), POINTER(HANDLE)]
+    shell32.SHCreateItemFromParsingName.restype = HRESULT
 
-shell32 = windll.shell32
-shell32.SHCreateItemFromParsingName.argtypes = [c_wchar_p, c_void_p, POINTER(GUID), POINTER(HANDLE)]
-shell32.SHCreateItemFromParsingName.restype = HRESULT
-
-SIIGBF_RESIZETOFIT = 0
-
-
-class IShellItemImageFactory(IUnknown):
-    _case_insensitive_ = True
-    _iid_ = GUID('{bcc18b79-ba16-442f-80c4-8a59c30c463b}')
-    _idlflags_ = []
+    SIIGBF_RESIZETOFIT = 0
 
 
-IShellItemImageFactory._methods_ = [
-    COMMETHOD([], HRESULT, 'GetImage',
-              (['in'], SIZE, 'size'),
-              (['in'], UINT, 'flags'),
-              (['out'], POINTER(HBITMAP), 'phbm')),
-]
+    class IShellItemImageFactory(IUnknown):
+        _case_insensitive_ = True
+        _iid_ = GUID('{bcc18b79-ba16-442f-80c4-8a59c30c463b}')
+        _idlflags_ = []
 
-LP_IShellItemImageFactory = POINTER(IShellItemImageFactory)
+
+    IShellItemImageFactory._methods_ = [
+        COMMETHOD([], HRESULT, 'GetImage',
+                  (['in'], SIZE, 'size'),
+                  (['in'], UINT, 'flags'),
+                  (['out'], POINTER(HBITMAP), 'phbm')),
+    ]
+
+    LP_IShellItemImageFactory = POINTER(IShellItemImageFactory)
 
 
 def get_file_thumbnail(filename, icon_size) -> Image:
