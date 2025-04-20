@@ -22,7 +22,7 @@ class Flags(IntFlag):
     FORCE_UPDATE_IMAGE_GALLERY = auto()  # 0x00000010
     FORCE_UPDATE_TITLE = auto()  # 0x00000100
     FORCE_UPDATE_TAGS = auto()  # 0x00001000
-    FORCE_UPDATE_YEAR = auto()  # 0x00010000
+    FORCE_UPDATE_SPECS = auto()  # 0x00010000
 
 
 def _add_to_success_queue(queue_name: str, project_id: str):
@@ -130,11 +130,13 @@ def parse_project_content(project_id: str, i: int, total: int, flags: Flags = Fl
                 output_data['title'] = title
                 any_change |= True
         # 爬取year
-        if 'year' not in output_data or \
-                flags & Flags.FORCE_UPDATE_YEAR:
-            success, year = extract_year(project_id, get_soup())
+        if 'specs' not in output_data or \
+                flags & Flags.FORCE_UPDATE_SPECS:
+            if 'year' in output_data:
+                output_data.pop('year')  # 删除之前由于旧数据格式问题，保留year字段
+            success, specs = extract_specs(project_id, get_soup())
             if success:
-                output_data['year'] = year
+                output_data['specs'] = specs
                 any_change |= True
         # 爬取tags
         if 'tags' not in output_data or \
@@ -263,29 +265,31 @@ def extract_tags(project_id: str, soup) -> tuple[bool, list[str]]:
         return False, []
 
 
-def extract_year(project_id: str, soup) -> tuple[bool, str]:
+def extract_specs(project_id: str, soup) -> tuple[bool, dict]:
+    # all keys should in lowercase
+    result = {'year': None,
+              'country': None,
+              'city': None,
+              'area': None,
+              'architects': None,
+              'photographs': None}
     try:
-        specs_div = soup.find('div', class_='afd-specs')
-        if not specs_div:
-            logging.warning(f"[{project_id}] project: {project_id} 没有找到afd-specs标签")
-            return False, ""
-        year_items = specs_div.find_all('li', class_='afd-specs__item')
-        for item in year_items:
+        specs_items = soup.find_all('li', class_='afd-specs__item')
+        for item in specs_items:
             key_span = item.find('span', class_='afd-specs__key')
-            if key_span and ('Year' in key_span.get_text() or '年' in key_span.get_text()):
-                value_span = item.find('span', class_='afd-specs__value')
-                if value_span:
-                    year_text = value_span.get_text().strip()
-                    year_match = re.search(r'\d{4}', year_text)
-                    if year_match:
-                        return True, year_match.group(0)
-                    return True, year_text
-        
-        logging.warning(f"[{project_id}] project: {project_id} 没有找到年份信息")
-        return False, ""
+            value_span = item.find('span', class_='afd-specs__value')
+            if not key_span or not value_span:
+                continue
+            key: str = key_span.get_text().strip().lower()  # use lowercase
+            value: str = value_span.get_text().strip()
+            for query_key in result.keys():
+                if query_key in key:
+                    result[query_key] = value
+
+        return True, result
     except Exception as e:
-        logging.error(f'project {project_id} 解析year时发生错误, error: {str(e)}')
-        return False, ""
+        logging.error(f'project {project_id} 解析时发生错误, error: {str(e)}')
+        return False, result
 
 
 def download_images(project_id, i, total, image_size_type="large", img_index_change_callback = None) -> bool:
