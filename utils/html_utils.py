@@ -22,6 +22,7 @@ class Flags(IntFlag):
     FORCE_UPDATE_IMAGE_GALLERY = auto()  # 0x0010
     FORCE_UPDATE_TITLE = auto()  # 0x0100
     FORCE_UPDATE_TAGS = auto()  # 0x1000
+    FORCE_UPDATE_YEAR = auto()  # 0x10000
 
 
 def _add_to_success_queue(queue_name: str, project_id: str):
@@ -127,6 +128,13 @@ def parse_project_content(project_id: str, i: int, total: int, flags: Flags = Fl
             success, title = extract_title(project_id, get_soup())
             if success:
                 output_data['title'] = title
+                any_change |= True
+        # 爬取year
+        if 'year' not in output_data or \
+                flags & Flags.FORCE_UPDATE_YEAR:
+            success, year = extract_year(project_id, get_soup())
+            if success:
+                output_data['year'] = year
                 any_change |= True
         # 爬取tags
         if 'tags' not in output_data or \
@@ -253,6 +261,32 @@ def extract_tags(project_id: str, soup) -> tuple[bool, list[str]]:
     except Exception as e:
         logging.error(f'project {project_id} 解析tags时发生错误, error: {str(e)}')
         return False, []
+
+
+def extract_year(project_id: str, soup) -> tuple[bool, str]:
+    try:
+        specs_div = soup.find('div', class_='afd-specs')
+        if not specs_div:
+            logging.warning(f"[{project_id}] project: {project_id} 没有找到afd-specs标签")
+            return False, ""
+        year_items = specs_div.find_all('li', class_='afd-specs__item')
+        for item in year_items:
+            key_span = item.find('span', class_='afd-specs__key')
+            if key_span and ('Year' in key_span.get_text() or '年' in key_span.get_text()):
+                value_span = item.find('span', class_='afd-specs__value')
+                if value_span:
+                    year_text = value_span.get_text().strip()
+                    import re
+                    year_match = re.search(r'\d{4}', year_text)
+                    if year_match:
+                        return True, year_match.group(0)
+                    return True, year_text
+        
+        logging.warning(f"[{project_id}] project: {project_id} 没有找到年份信息")
+        return False, ""
+    except Exception as e:
+        logging.error(f'project {project_id} 解析year时发生错误, error: {str(e)}')
+        return False, ""
 
 
 def download_images(project_id, i, total, image_size_type="large", img_index_change_callback = None) -> bool:
