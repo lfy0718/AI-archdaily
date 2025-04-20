@@ -322,11 +322,13 @@ class Components:
 
     @staticmethod
     def button(text, width=0, height=0, disabled=False):
+        Components._StyleModule.push_loose_padding()
         if disabled:
             Components._StyleModule.push_disabled_button_color()
         clicked = imgui.button(text, width, height)
         if disabled:
             Components._StyleModule.pop_button_color()
+        Components._StyleModule.pop_loose_padding()
         return clicked and not disabled
 
     @staticmethod
@@ -340,6 +342,7 @@ class Components:
 
     @staticmethod
     def highlighted_button(text, width=0, height=0, disabled=False):
+        Components._StyleModule.push_loose_padding()
         if disabled:
             Components._StyleModule.push_disabled_button_color()
         else:
@@ -347,16 +350,19 @@ class Components:
         clicked = imgui.button(text, width, height)
 
         Components._StyleModule.pop_button_color()
+        Components._StyleModule.pop_loose_padding()
         return clicked and not disabled
 
     @staticmethod
     def dangerous_button(text, width=0, height=0, disabled=False):
+        Components._StyleModule.push_loose_padding()
         if disabled:
             Components._StyleModule.push_disabled_button_color()
         else:
             Components._StyleModule.push_dangerous_button_color()
         clicked = imgui.button(text, width, height)
         Components._StyleModule.pop_button_color()
+        Components._StyleModule.pop_loose_padding()
         return clicked and not disabled
 
     @staticmethod

@@ -2,7 +2,7 @@ import enum
 import inspect
 import types
 from typing import Optional, Callable, Union, Generator
-
+from config import *
 import imgui
 
 
@@ -54,11 +54,11 @@ class GlobalAppState:
         self.mProjectSubCurr = {}
 
         self.mSuccessProjects = []
-
+        self._global_scale = user_settings.global_scale  # 重启后生效
 
     @property
     def global_scale(self):
-        return 1.00
+        return self._global_scale
 
     @property
     def font_size(self):

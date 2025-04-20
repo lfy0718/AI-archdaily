@@ -2,7 +2,6 @@
 # @Author  : Yiheng Feng
 # @Time    : 3/28/2025 10:47 AM
 # @Function:
-import os
 import threading
 import time
 from concurrent.futures import Future
@@ -64,6 +63,8 @@ class ScraperWindow(PopupWindow):
     _working_total = 1
     _working_curr = 0
 
+    _imgui_flag_states = {flag: False for flag in Flags if flag != Flags.NONE}
+
     @classmethod
     def w_content(cls):
         super().w_content()
@@ -87,7 +88,7 @@ class ScraperWindow(PopupWindow):
 
     @classmethod
     def step1(cls):
-        imgui.text("步骤1： 下载项目html页面到本地")
+        c.bold_text("步骤1： 下载项目html页面到本地")
         c.gray_text("原来的step5-1和5-2")
         c.gray_text("文件将保存为content.html")
         if imgui.begin_tab_bar("get_project_id_queue"):
@@ -107,7 +108,7 @@ class ScraperWindow(PopupWindow):
                 imgui.end_tab_item()
             imgui.end_tab_bar()
 
-        imgui.text("扫描结果")
+        imgui.text("扫描结果:")
         project_id_queue_count = len(cls._projects_id_queue_for_scraping_html)
         imgui.text(f"当前有{project_id_queue_count}个项目没有html文件")
         if project_id_queue_count == 0:
@@ -118,17 +119,29 @@ class ScraperWindow(PopupWindow):
 
     @classmethod
     def step2(cls):
-        imgui.text("步骤2： 解析content.html")
+        c.bold_text("步骤2： 解析content.html")
         c.gray_text("原来的step5-3")
         c.gray_text("文件将保存为content.json")
-
+        # region 扫描
         c.begin_child_auto_height("parse_html", bg_color=StyleModule.COLOR_CHILD_BG)
         c.gray_text("扫描现有的项目文件夹中是否存在content.html")
         cls._imgui_scan_button_region("Step2-scan", "扫描项目中的content.html",
                                       cls.scan_projects_folder_for_parsing_content)
         c.end_child_auto_height("parse_html")
+        # endregion
 
-        imgui.text("扫描结果")
+        # region parse settings
+        imgui.push_style_var(imgui.STYLE_FRAME_PADDING, (0, 0))
+        imgui.push_style_var(imgui.STYLE_ITEM_SPACING, (2 * g.global_scale, 2* g.global_scale))
+        imgui.text("解析设置:")
+        c.begin_child("parse settings", width=0, height=100 * g.global_scale, bg_color=StyleModule.COLOR_CHILD_BG)
+        for flag in cls._imgui_flag_states.keys():
+            _, cls._imgui_flag_states[flag] = imgui.checkbox(flag.name, cls._imgui_flag_states[flag])
+        imgui.pop_style_var(2)
+        c.end_child()
+        # endregion
+        
+        imgui.text("扫描结果:")
         project_id_queue_count = len(cls._projects_id_queue_for_parsing_html)
         imgui.text(f"待解析项目队列长度：{project_id_queue_count}")
         if project_id_queue_count > 0:
@@ -137,6 +150,8 @@ class ScraperWindow(PopupWindow):
                            f"有{cls._num_projects_with_no_content_html}个项目没有content.html，请注意")
             else:
                 c.info_box("healthy_project", "所有的项目都有content.html, 你的项目很健康~", "success")
+
+
         if project_id_queue_count == 0:
             c.info_box("no_project_id_queue_for_html_parsing", "没有需要解析html项目", "info")
             return
@@ -145,7 +160,7 @@ class ScraperWindow(PopupWindow):
 
     @classmethod
     def step3(cls):
-        imgui.text("步骤3： 下载图片")
+        c.bold_text("步骤3： 下载图片")
         c.gray_text("原来的step6")
 
         c.begin_child_auto_height("download image", bg_color=StyleModule.COLOR_CHILD_BG)
@@ -153,7 +168,7 @@ class ScraperWindow(PopupWindow):
         cls._imgui_scan_button_region("Step3-scan", "扫描项目图像文件", cls.scan_projects_folder_for_downloading_images)
         c.end_child_auto_height("download image")
 
-        imgui.text("扫描结果")
+        imgui.text("扫描结果:")
         project_id_queue_count = len(cls._projects_id_queue_for_downloading_image)
         imgui.text(f"待下载的项目队列长度：{project_id_queue_count}")
         if project_id_queue_count == 0:
@@ -205,6 +220,7 @@ class ScraperWindow(PopupWindow):
         if not os.path.isdir(user_settings.projects_dir):
             logging.warning(f"项目文件夹不存在: {user_settings.projects_dir}")
             return
+
         def _scan_projects_folder():
             cls._is_working = True
             cls._working_context = "Step1-scan1"
@@ -288,6 +304,7 @@ class ScraperWindow(PopupWindow):
         if not os.path.isdir(user_settings.projects_dir):
             logging.warning(f"项目文件夹不存在: {user_settings.projects_dir}")
             return
+
         def _scan_projects_folder():
             cls._is_working = True
             cls._working_context = "Step2-scan"
@@ -336,6 +353,7 @@ class ScraperWindow(PopupWindow):
         if not os.path.isdir(user_settings.projects_dir):
             logging.warning(f"项目文件夹不存在: {user_settings.projects_dir}")
             return
+
         def _scan_projects_folder():
             cls._is_working = True
             cls._working_context = "Step3-scan"
@@ -476,6 +494,15 @@ class ScraperWindow(PopupWindow):
             cls._working_curr = 0
             g.mSuccessProjects.clear()
 
+            def get_combined_flags(flags_state):
+                combined_flags = Flags.NONE
+                for flag, value in flags_state.items():
+                    if value:
+                        combined_flags |= flag
+                return combined_flags
+
+            flags = get_combined_flags(cls._imgui_flag_states)
+
             def _parse_project_content(project_id: str, i: int):
                 if cls._stop_working:
                     return
@@ -483,8 +510,7 @@ class ScraperWindow(PopupWindow):
                 g.mAliveWorkers += 1
                 g.mAliveProjects.append(project_id)
                 g.mProjectStartTimes[project_id] = time.time()
-                changed = parse_project_content(project_id, i, cls._working_total,
-                                                flags=Flags.NONE)
+                changed = parse_project_content(project_id, i, cls._working_total, flags=flags)
                 if changed:
                     g.mSuccessProjects.append(project_id)
                 cls._working_curr += 1

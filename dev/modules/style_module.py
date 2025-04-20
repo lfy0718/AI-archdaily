@@ -262,7 +262,7 @@ class StyleModule(BaseModule):
         style.grab_rounding = round(0 * g.global_scale)
 
         style.window_padding = (8 * g.global_scale, 8 * g.global_scale)
-        style.frame_padding = (6 * g.global_scale, 6 * g.global_scale)
+        style.frame_padding = (4 * g.global_scale, 4 * g.global_scale)
         style.cell_padding = (4 * g.global_scale, 2 * g.global_scale)
 
         style.item_spacing = (10 * g.global_scale, 10 * g.global_scale)
@@ -315,10 +315,10 @@ class StyleModule(BaseModule):
 
 
     @classmethod
-    def push_loose_window_title(cls):
+    def push_loose_padding(cls):
         imgui.push_style_var(imgui.STYLE_FRAME_PADDING,
                              (round(g.mImguiStyle.frame_padding[0] * 1.5), round(g.mImguiStyle.frame_padding[1] * 1.5)))
 
     @classmethod
-    def pop_loose_window_title(cls):
+    def pop_loose_padding(cls):
         imgui.pop_style_var(1)

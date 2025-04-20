@@ -63,7 +63,7 @@ class StateInfoWindow(PopupWindow):
             project_id: str = project_id
             opened, selected = imgui.selectable(f"{project_id.ljust(10, ' ')} {sub_progress_str.ljust(10, ' ')} {(curr_time - start_time):.0f}s")
             if opened:
-                os.startfile(os.path.join(config_projects_dir, project_id))
+                os.startfile(os.path.join(user_settings.projects_dir, project_id))
         imgui.pop_style_var()
         c.end_child()
 
@@ -78,6 +78,6 @@ class StateInfoWindow(PopupWindow):
             project_id = g.mSuccessProjects[-(i + 1)]
             opened, selected = imgui.selectable(f"{project_id}")
             if opened:
-                os.startfile(os.path.join(config_projects_dir, project_id))
+                os.startfile(os.path.join(user_settings.projects_dir, project_id))
         imgui.pop_style_var()
         c.end_child()

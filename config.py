@@ -43,6 +43,7 @@ class UserSettings:
         self.mongodb_host = 'mongodb://localhost:32769/?directConnection=true'
         self.mongodb_db_name = 'AI-Archdaily'
 
+        self.global_scale = 1.0
 
 def load_user_settings(_user_settings: UserSettings) -> None:
     data_path = "./user_settings.json"

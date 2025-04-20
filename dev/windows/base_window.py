@@ -72,9 +72,9 @@ class PopupWindow(BaseWindow):
 
         # before window begin
         cls.w_before_window_begin()
-        StyleModule.push_loose_window_title()
+        StyleModule.push_loose_padding()
         expanded, opened = imgui.begin(cls.config_popup_window_name, True, flags)
-        StyleModule.pop_loose_window_title()
+        StyleModule.pop_loose_padding()
         # ==================================================================
         #                           window started
         # ==================================================================
