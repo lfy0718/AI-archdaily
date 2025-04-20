@@ -4,7 +4,7 @@ import os
 import random
 import time
 import traceback
-
+import re
 import requests
 from bs4 import BeautifulSoup
 
@@ -18,11 +18,11 @@ from enum import IntFlag, auto
 
 class Flags(IntFlag):
     NONE = 0
-    FORCE_UPDATE_MAIN_CONTENT = auto()  # 0x0001
-    FORCE_UPDATE_IMAGE_GALLERY = auto()  # 0x0010
-    FORCE_UPDATE_TITLE = auto()  # 0x0100
-    FORCE_UPDATE_TAGS = auto()  # 0x1000
-    FORCE_UPDATE_YEAR = auto()  # 0x10000
+    FORCE_UPDATE_MAIN_CONTENT = auto()  # 0x00000001
+    FORCE_UPDATE_IMAGE_GALLERY = auto()  # 0x00000010
+    FORCE_UPDATE_TITLE = auto()  # 0x00000100
+    FORCE_UPDATE_TAGS = auto()  # 0x00001000
+    FORCE_UPDATE_YEAR = auto()  # 0x00010000
 
 
 def _add_to_success_queue(queue_name: str, project_id: str):
@@ -276,7 +276,6 @@ def extract_year(project_id: str, soup) -> tuple[bool, str]:
                 value_span = item.find('span', class_='afd-specs__value')
                 if value_span:
                     year_text = value_span.get_text().strip()
-                    import re
                     year_match = re.search(r'\d{4}', year_text)
                     if year_match:
                         return True, year_match.group(0)
