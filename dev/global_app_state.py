@@ -1,9 +1,12 @@
 import enum
 import inspect
+import logging
 import types
 from typing import Optional, Callable, Union, Generator
-from config import *
+
 import imgui
+
+from config import *
 
 
 class GlobalAppState:
@@ -55,6 +58,24 @@ class GlobalAppState:
 
         self.mSuccessProjects = []
         self._global_scale = user_settings.global_scale  # 重启后生效
+
+        self._mMongoClient = None
+        atexit.register(self._at_exit)
+
+    def _at_exit(self):
+        if self._mMongoClient is not None:
+            self._mMongoClient.close()
+            logging.info("MongoDB client closed")
+
+    @property
+    def mMongoClient(self):
+        return self._mMongoClient
+
+    @mMongoClient.setter
+    def mMongoClient(self, value):
+        if value is None and self._mMongoClient is not None:
+            self._mMongoClient.close()
+        self._mMongoClient = value
 
     @property
     def global_scale(self):

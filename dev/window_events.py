@@ -1,7 +1,10 @@
+import logging
+
 import imgui
 import moderngl_window as mglw
 from moderngl_window.integrations.imgui import ModernglWindowRenderer
 
+import dev.modules
 from config import *
 from dev import modules
 from dev.components import c
@@ -51,6 +54,8 @@ class WindowEvents(mglw.WindowConfig):
         # However, the approach used here does indeed solve the problem.
         # if user_settings.fullscreen:
         #     self.wnd.fullscreen = True
+        from dev.modules.graphic_module import FrameBufferTexture
+        self.top_fbt = FrameBufferTexture("top_fbt", self.window_size[0], self.window_size[1], with_depth=False)
 
     def render(self, time: float, frametime: float):
         """

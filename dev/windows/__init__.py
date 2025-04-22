@@ -9,8 +9,10 @@ import moderngl
 from dev.global_app_state import g
 from dev.windows.base_window import BaseWindow, PopupWindow
 from dev.windows.scraper_window import ScraperWindow
+from dev.windows.database_window import DatabaseWindow
 from dev.windows.state_info_window import StateInfoWindow
 from dev.windows.settings_window import SettingsWindow
+from dev.windows.toast_window import ToastWindow
 
 # NOTE: If you added a new window, import it here.
 
@@ -20,15 +22,19 @@ logger.setLevel(logging.INFO)
 # NOTE: If you added a new window, make sure to add it into ALL_WINDOWS list.
 ALL_WINDOWS: list[Type[BaseWindow]] = [
     ScraperWindow,
+    DatabaseWindow,
     StateInfoWindow,
-    SettingsWindow
+    SettingsWindow,
+    ToastWindow,
 ]
 
 # NOTE: If you added a new popup window, make sure to add it into POPUP_WINDOWS list.
 POPUP_WINDOWS: list[Type[PopupWindow]] = [
     ScraperWindow,
+    DatabaseWindow,
     StateInfoWindow,
-    SettingsWindow
+    SettingsWindow,
+    ToastWindow,
 ]
 
 
@@ -36,13 +42,6 @@ class ExcludeTypes(Enum):
     Nothing = 0
     Self = 1
     AllPopups = 2
-
-
-@dataclass
-class CommandForGetBlurBg:
-    caller: Type[PopupWindow]
-    exclude_type: ExcludeTypes
-    callback: Callable[[moderngl.Texture], None] = None
 
 
 class WindowManager:

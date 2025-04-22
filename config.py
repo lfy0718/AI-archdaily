@@ -14,6 +14,8 @@ RESOURCES_DIR = "./resources"
 class UserSettings:
     def __init__(self):
         # these are default values
+        self.global_scale = 1.0
+
         self.base_url = "https://www.archdaily.com/"
         self.projects_dir = './results/projects'
         self.invalid_project_ids_path = './results/invalid_project_ids.json'
@@ -40,10 +42,12 @@ class UserSettings:
             "Benefits", "Archive", "Content", "Maps", "Audio",
             "Check the latest Chairs", "Check the latest Counters"
         }
-        self.mongodb_host = 'mongodb://localhost:32769/?directConnection=true'
-        self.mongodb_db_name = 'AI-Archdaily'
+        self.mongodb_host = 'mongodb://localhost:32768/?directConnection=true'
+        self.mongodb_archdaily_db_name = 'Test-AI-Archdaily'
+        self.mongodb_gooood_db_name = 'Test-AI-Gooood'
 
-        self.global_scale = 1.0
+        # qwen api key
+        self.api_keys = ['put your api key here', ]
 
 def load_user_settings(_user_settings: UserSettings) -> None:
     data_path = "./user_settings.json"

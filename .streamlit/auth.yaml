@@ -1,0 +1,28 @@
+cookie:
+  expiry_days: 30
+  key: 1q2w3e4r
+  name: ai-archdaily
+credentials:
+  usernames:
+    wolong:
+      email: wolong@gmail.com
+      failed_login_attempts: 0 # Will be managed automatically
+      first_name: Long
+      last_name: Wo
+      logged_in: False # Will be managed automatically
+      password: wolong # Will be hashed automatically
+      roles: # Optional
+      - admin
+      - editor
+      - viewer
+    fengchu:
+      email: fengchu@gmail.com
+      failed_login_attempts: 0 # Will be managed automatically
+      first_name: Chu
+      last_name: Feng
+      logged_in: False # Will be managed automatically
+      password: fengchu # Will be hashed automatically
+      roles: # Optional
+        - admin
+        - editor
+        - viewer

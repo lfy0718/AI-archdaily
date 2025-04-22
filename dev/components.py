@@ -891,7 +891,7 @@ class Components:
                     imgui.end_popup()
 
             imgui.end_child()
-
+        _run_right_button_function = False
         if right_region_width > 0:
             imgui.push_style_color(imgui.COLOR_CHILD_BACKGROUND, 0, 0, 0, 0.1)
             imgui.push_style_var(imgui.STYLE_ITEM_SPACING, (0, 0))
@@ -919,7 +919,7 @@ class Components:
                 else:
                     col = g.mImguiStyle.colors[imgui.COLOR_TEXT]
                 if imgui.is_mouse_clicked(0) and right_button_func is not None:
-                    right_button_func()
+                    _run_right_button_function = True
             else:
                 col = color_utils.set_alpha(g.mImguiStyle.colors[imgui.COLOR_TEXT], 0.5)
             Components._DrawingModule.draw_image(glo, _min_x, _min_y, _max_x, _max_y, uv0, uv1, col=col,
@@ -930,6 +930,10 @@ class Components:
             custom_injection_function()
 
         imgui.end_child()
+
+        # put it at the end
+        if _run_right_button_function:
+            right_button_func()
 
     @staticmethod
     def _input_text_callback(data: "_ImGuiInputTextCallbackData"):

@@ -5,6 +5,8 @@ import random
 import time
 import traceback
 import re
+from typing import Optional
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -42,7 +44,7 @@ def flush_success_queue(queue_name: str):
 
 
 def request_project_html(project_id: str, i: int, total: int, invalid_project_ids: set[str],
-                         force_update: bool = False) -> bool:
+                         force_update: bool = False) -> Optional[bool]:
     """
     请求project的id并保存到本地
     :param force_update: 强制重新爬取
@@ -50,19 +52,19 @@ def request_project_html(project_id: str, i: int, total: int, invalid_project_id
     :param i:
     :param total:
     :param invalid_project_ids:
-    :return:
+    :return: None代表无错误完成， False代表错误， True代表成功
     """
     url = f"{user_settings.base_url}{project_id}"
     html_file_path = os.path.join(user_settings.projects_dir, project_id, "content.html")
     if os.path.isfile(html_file_path) and not force_update:
-        return False
+        return None
     if project_id in invalid_project_ids:
-        return False
+        return None
     try:
         response = requests.get(url, headers=user_settings.headers, timeout=60)
         if response.status_code == 404:
             invalid_project_ids.add(project_id)
-            return False
+            return None
         if response.status_code != 200:
             logging.error(f"[{i + 1}/{total}] project: {project_id} 请求出现意外情况，状态码: {response.status_code}。")
             return False
@@ -77,7 +79,8 @@ def request_project_html(project_id: str, i: int, total: int, invalid_project_id
         return False
 
 
-def parse_project_content(project_id: str, i: int, total: int, flags: Flags = Flags.NONE) -> bool:
+def parse_project_content(project_id: str, i: int, total: int, flags: Flags = Flags.NONE) -> Optional[bool]:
+    """返回True表示改变， False表示错误， None表示无变化"""
     html_file_path = os.path.join(user_settings.projects_dir, project_id, "content.html")
     json_file_path = os.path.join(user_settings.projects_dir, project_id, "content.json")
     if not os.path.isfile(html_file_path):
@@ -145,20 +148,19 @@ def parse_project_content(project_id: str, i: int, total: int, flags: Flags = Fl
             if success:
                 output_data['tags'] = tags
                 any_change |= True
-        try:
-            if any_change:
-                os.makedirs(os.path.dirname(json_file_path), exist_ok=True)
-                with open(json_file_path, 'w', encoding='utf-8') as f:
-                    json.dump(output_data, f, ensure_ascii=False, indent=4)
-                _add_to_success_queue('content_json', project_id)
-                return True
-        except Exception as e:
-            logging.error(f'[{i + 1}/{total}] project {project_id} 保存文件时发生错误 error: {str(e)}')
-            traceback.print_exc()
-            exit(1)
+
+        if any_change:
+            os.makedirs(os.path.dirname(json_file_path), exist_ok=True)
+            with open(json_file_path, 'w', encoding='utf-8') as f:
+                json.dump(output_data, f, ensure_ascii=False, indent=4)
+            _add_to_success_queue('content_json', project_id)
+            return True
+
     except Exception as e:
         logging.error(f'[{i + 1}/{total}] project {project_id} error: {str(e)}')
-    return False
+        return False
+
+    return None
 
 
 def extract_main_content(project_id: str, soup) -> tuple[bool, list[dict]]:
@@ -292,7 +294,7 @@ def extract_specs(project_id: str, soup) -> tuple[bool, dict]:
         return False, result
 
 
-def download_images(project_id, i, total, image_size_type="large", img_index_change_callback = None) -> bool:
+def download_images(project_id, i, total, image_size_type="large", img_index_change_callback = None) -> Optional[bool]:
     folder_path = os.path.join(user_settings.projects_dir, project_id)
     json_file_path = os.path.join(user_settings.projects_dir, project_id, "content.json")
     if not os.path.isfile(json_file_path):

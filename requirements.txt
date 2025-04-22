@@ -15,3 +15,7 @@ scikit-learn==1.6.1
 imgui[full]
 comtypes
 pyperclip
+streamlit
+streamlit-authenticator
+dashscope
+langchain

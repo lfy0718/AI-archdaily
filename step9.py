@@ -16,6 +16,7 @@ skip_exist = False
 client = MongoClient(user_settings.mongodb_host)
 logging.info(f"connected to {user_settings.mongodb_host}")
 db = client[user_settings.mongodb_db_name]
+
 content_collection = db['content_collection']
 
 all_projects = os.listdir(user_settings.projects_dir)[:100] # 取前100个做实验
