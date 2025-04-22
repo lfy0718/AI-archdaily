@@ -686,7 +686,11 @@ def calculate_text_embedding(ctx: WorkingContext,
 
         # 从content_collection中提取main_content
         content_doc = content_collection.find_one({'_id': project_id})
-        if not content_doc or 'main_content' not in content_doc:
+        if not content_doc:
+            # 项目在数据库中不存在，跳过处理
+            ctx.report_project_complete(project_id)
+            return
+        if 'main_content' not in content_doc:
             logging.warning(f"project: {project_id} 没有main_content字段")
             ctx.report_project_failed(project_id)
             return

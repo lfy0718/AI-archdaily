@@ -23,21 +23,23 @@
     "ignore_keywords": [
         "Images",
         "Projects",
-        "Check the latest Counters",
-        "Audio",
         "Check the latest Chairs",
-        "Benefits",
-        "Folders",
-        "Archive",
-        "Products",
-        "Content",
         "AD Plus",
-        "Maps"
+        "Maps",
+        "Products",
+        "Audio",
+        "Benefits",
+        "Archive",
+        "Folders",
+        "Check the latest Counters",
+        "Content"
     ],
-    "mongodb_host": "mongodb://47.116.56.122:18896/?directConnection=true",
-    "mongodb_archdaily_db_name": "Test-AI-Archdaily",
-    "mongodb_gooood_db_name": "Test-AI-Gooood",
+    "mongodb_host": "mongodb://localhost:32768/?directConnection=true",
+    "mongodb_archdaily_db_name": "AI-Archdaily",
+    "mongodb_gooood_db_name": "AI-Gooood",
     "api_keys": [
-        "sk-5e7ce8c846bd456c8b1fa37777e67b62"
+        "sk-5e7ce8c846bd456c8b1fa37777e67b62",
+        "sk-7d670e7b933c4e52a707b20c16c091e8",
+        "sk-71e2959d105a42fd82fa64cdcfebf6c4"
     ]
 }
