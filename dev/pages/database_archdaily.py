@@ -26,8 +26,10 @@ def _step0_connect_to_db():
         col1, col2 = st.columns(2)
         if col1.button("保存", use_container_width=True):
             user_settings.mongodb_host = db_host
+            save_user_settings(user_settings)
         if col2.button("保存并连接", use_container_width=True, type="primary"):
             user_settings.mongodb_host = db_host
+            save_user_settings(user_settings)
             success, b.g.mongo_client = db_utils.get_mongo_client(db_host)
             if not success:
                 st.warning("连接失败")
@@ -41,6 +43,7 @@ def _step0_connect_to_db():
         db_name = st.text_input("DB Name", user_settings.mongodb_archdaily_db_name)
         if st.button("保存并刷新"):
             user_settings.mongodb_archdaily_db_name = db_name
+            save_user_settings(user_settings)
             logging.info(f"已切换至数据库({user_settings.mongodb_archdaily_db_name})")
             st.rerun()
     else:

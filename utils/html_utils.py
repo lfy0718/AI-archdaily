@@ -155,12 +155,12 @@ def parse_project_content(project_id: str, i: int, total: int, flags: Flags = Fl
                 json.dump(output_data, f, ensure_ascii=False, indent=4)
             _add_to_success_queue('content_json', project_id)
             return True
-
+        else:
+            return None
     except Exception as e:
         logging.error(f'[{i + 1}/{total}] project {project_id} error: {str(e)}')
         return False
 
-    return None
 
 
 def extract_main_content(project_id: str, soup) -> tuple[bool, list[dict]]:

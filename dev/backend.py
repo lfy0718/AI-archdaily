@@ -2,6 +2,7 @@
 # @Author  : Yiheng Feng
 # @Time    : 4/21/2025 3:40 PM
 # @Function:
+import logging
 import threading
 import time
 import traceback
@@ -582,14 +583,16 @@ def download_gallery_images(ctx: WorkingContext, *args):
 def upload_content(ctx: WorkingContext, skip_exist: bool = True, *args):
     if g.mongo_client is None:
         raise Exception("MongoDB连接失败")
-    db = g.mongo_client[user_settings.mongodb_db_name]
+    db = g.mongo_client[user_settings.mongodb_archdaily_db_name]
 
     content_collection = db['content_collection']
 
     all_projects = os.listdir(user_settings.projects_dir)
     ctx.set_total(len(all_projects))
-    # 遍历每个项目文件夹
-    for project_id in tqdm(all_projects):
+
+    def _handle_project(project_id: str):
+        if ctx.should_stop:
+            return
         ctx.report_project_start(project_id)
         ctx.update(1)
         project_path = os.path.join(user_settings.projects_dir, project_id)
@@ -600,18 +603,23 @@ def upload_content(ctx: WorkingContext, skip_exist: bool = True, *args):
             if existing_doc:
                 # logging.info(f"project: {project_id} 已存在于数据库中，跳过处理")
                 ctx.report_project_complete(project_id)
-                continue
+                return
 
         # 读取content.json
         content_json_path = os.path.join(project_path, 'content.json')
         if not os.path.exists(content_json_path):
             logging.warning(f"project: {project_id} content.json文件不存在")
             ctx.report_project_failed(project_id)
-            continue
+            return
 
-        with open(content_json_path, 'r', encoding='utf-8') as f:
-            content_data = json.load(f)
-
+        try:
+            with open(content_json_path, 'r', encoding='utf-8') as f:
+                content_data = json.load(f)
+        except Exception as e:
+            logging.error(f"project: {project_id} content.json文件读取失败，错误信息：{str(e)}")
+            os.remove(content_json_path)
+            ctx.report_project_failed(project_id)
+            return
         # 插入或更新content数据
         content_doc = {'_id': project_id}
         content_doc.update(content_data)
@@ -626,7 +634,11 @@ def upload_content(ctx: WorkingContext, skip_exist: bool = True, *args):
         # else:
         #     logging.info(f"project: {project_id} 更新成功，修改计数: {content_result.modified_count}")
         ctx.report_project_success(project_id)
-
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = (executor.submit(_handle_project, project_id) for project_id in all_projects)
+        for future in as_completed(futures):
+            future.result()
+    logging.info('complete')
 
 def calculate_text_embedding(ctx: WorkingContext,
                              skip_exist: bool = True,
@@ -637,7 +649,7 @@ def calculate_text_embedding(ctx: WorkingContext,
     from utils.embedding_utils import embed_text
     if g.mongo_client is None:
         raise Exception("MongoDB连接失败")
-    db = g.mongo_client[user_settings.mongodb_db_name]
+    db = g.mongo_client[user_settings.mongodb_archdaily_db_name]
     content_collection = db['content_collection']
     content_embedding_collection = db['content_embedding']
 
