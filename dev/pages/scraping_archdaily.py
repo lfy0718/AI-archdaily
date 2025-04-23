@@ -2,7 +2,7 @@
 # @Author  : Yiheng Feng
 # @Time    : 4/21/2025 3:39 PM
 # @Function:
-import logging
+
 import streamlit as st
 from dev import backend as b
 
@@ -31,7 +31,7 @@ def _step1_download_html():
     def _plan1_region():
         st.caption("此方案将扫描现有项目文件夹中是否存在content.html， 如果没有则补充")
         b.template_start_work_with_progress("扫描需要下载的项目id", "Step1-scan1",
-                                            b.scan_projects_folder,
+                                            b.archdaily__scan_projects_with_no_content_html,
                                             st_button_type='secondary', st_button_icon="🔍")
 
     def _plan2_region():
@@ -43,7 +43,7 @@ def _step1_download_html():
             end_id = st.number_input("结束id", value=100100, step=1)
         st.caption(f"已选择的项目数量: {abs(start_id - end_id)}")
         b.template_start_work_with_progress("扫描需要下载的项目id", "Step1-scan2",
-                                            b.scan_valid_project_id, start_id, end_id,
+                                            b.archdaily__scan_valid_project_id_in_range, start_id, end_id,
                                             st_button_type='secondary', st_button_icon="🔍")
 
 
@@ -56,7 +56,7 @@ def _step1_download_html():
 
     b.template_project_id_queue_info_box("需要下载的html项目", "Step1-html")
     b.template_start_work_with_progress("下载项目html页面到本地", "Step1-html",
-                                        b.download_projects_html_to_local,
+                                        b.archdaily__download_projects_html_to_local,
                                         st_show_detail_number=True, st_show_detail_project_id=True, st_button_icon="📂",
                                         ctx_enable_ctx_scope_check=True)
 
@@ -66,7 +66,7 @@ def _step2_parse_html():
     st.info(" 首先需要扫描本地文件")
     skip_exist = st.checkbox("跳过已经存在的content.json")
     result = b.template_start_work_with_progress("开始扫描", "Step2-scan",
-                                                 b.scan_projects_folder_for_parsing_content, skip_exist,
+                                                 b.archdaily__scan_projects_folder_for_parsing_content, skip_exist,
                                                  st_button_type='secondary', st_button_icon="🔍")
     if "num_projects_with_no_content_html" in result and result['num_projects_with_no_content_html']:
         st.warning(f"{result['num_projects_with_no_content_html']}个项目没有content.html，请注意")
@@ -74,24 +74,10 @@ def _step2_parse_html():
         st.info(result['final_msg'])
     st.divider()
 
-    def on_change(_flag_name: str):
-        ss_key_value = st.session_state[f'key_{_flag_name}']
-        st.session_state[_flag_name] = ss_key_value
-        b.g.flag_states[_flag_name] = ss_key_value
-        logging.info(f"{_flag_name} set to {ss_key_value}")
-
-    def make_on_change(_flag_name: str):
-        # 创建闭包函数
-        return lambda: on_change(_flag_name)
-
-    for flag_name in b.g.flag_states:
-        if flag_name not in st.session_state:
-            st.session_state[flag_name] = b.g.flag_states[flag_name]
-        st.checkbox(flag_name, value=st.session_state[flag_name], key=f"key_{flag_name}", on_change=make_on_change(flag_name))
-
+    b.template_flags("archdaily")
     b.template_project_id_queue_info_box("需要解析的html", "Step2-html")
     b.template_start_work_with_progress("开始解析html", "Step2-html",
-                                        b.parse_htmls, b.g.flag_states,
+                                        b.archdaily__parse_htmls, b.g.flag_states['archdaily'],
                                         st_show_detail_number=True, st_show_detail_project_id=True, st_button_icon="✨",
                                         ctx_enable_ctx_scope_check=True)
 
@@ -100,7 +86,7 @@ def _step3_download_images():
     st.subheader("步骤3： 下载图像")
     st.info(" 首先需要扫描本地文件")
     result = b.template_start_work_with_progress("开始扫描", "Step3-scan",
-                                                 b.scan_projects_folder_for_downloading_images,
+                                                 b.archdaily__scan_projects_folder_for_downloading_images,
                                                  st_button_type='secondary', st_button_icon="🔍")
     if 'final_msg' in result:
         st.info(result['final_msg'])
@@ -109,7 +95,7 @@ def _step3_download_images():
 
     b.template_project_id_queue_info_box("需要下载图片的项目", "Step3-download")
     b.template_start_work_with_progress("开始下载Image Gallery", "Step3-download",
-                                        b.download_gallery_images,
+                                        b.archdaily__download_gallery_images,
                                         st_show_detail_number=True, st_show_detail_project_id=True,
                                         ctx_enable_ctx_scope_check=True)
 

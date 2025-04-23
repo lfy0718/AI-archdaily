@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
 from config import *
-from utils.html_utils import request_project_html, flush_success_queue
+from utils.html_utils import request_project_html_archdaily, flush_success_queue
 from utils.logging_utils import init_logger
 
 init_logger('step5_2')
@@ -26,7 +26,7 @@ complete = False
 
 
 def save_invalid_project_ids():
-    with open(user_settings.invalid_project_ids_path, 'w', encoding='utf-8') as f:
+    with open(user_settings.archdaily_invalid_projects_ids_path, 'w', encoding='utf-8') as f:
         logging.info("保存invalid_project_ids")
         json.dump(list(invalid_project_ids), f, ensure_ascii=False, indent=4)
 
@@ -50,7 +50,7 @@ def main():
         id_range.reverse()
     project_id_queue_full: list[str] = [str(project_id) for project_id in id_range]
     # 扣除all_projects已经存在的项目
-    all_projects_set = set(os.listdir(user_settings.projects_dir))
+    all_projects_set = set(os.listdir(user_settings.archdaily_projects_dir))
     project_id_queue = [project_id for project_id in project_id_queue_full if project_id not in all_projects_set]
     # 扣除invalid_project_ids
     project_id_queue = [project_id for project_id in project_id_queue if project_id not in invalid_project_ids]
@@ -64,7 +64,7 @@ def main():
     threading.Thread(target=timer_save_invalid_project_ids).start()
 
     def _request_project_html(project_id: str, i: int):
-        request_project_html(project_id, i, len(project_id_queue), invalid_project_ids, force_update=False)
+        request_project_html_archdaily(project_id, i, len(project_id_queue), invalid_project_ids, force_update=False)
 
     # 使用ThreadPoolExecutor进行并发爬取
     with ThreadPoolExecutor(max_workers=64) as executor:

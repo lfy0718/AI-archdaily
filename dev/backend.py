@@ -9,9 +9,11 @@ import os
 import threading
 import time
 import traceback
+import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Optional, Any
 
+import requests
 import streamlit as st
 from tqdm import tqdm
 
@@ -178,6 +180,7 @@ class WorkingContext:
 
     def report_project_start(self, project_id):
         """报告项目开始"""
+        project_id = str(project_id)
         if project_id in self._running_projects:
             return
         self._running_projects.append(project_id)
@@ -195,25 +198,30 @@ class WorkingContext:
 
     def report_project_complete(self, project_id):
         """报告项目完成"""
+        project_id = str(project_id)
         self._complete_projects.append(project_id)
         self._on_project_complete(project_id)
 
     def report_project_success(self, project_id):
         """报告项目完成并成功"""
+        project_id = str(project_id)
         self._success_projects.append(project_id)
         self._complete_projects.append(project_id)
         self._on_project_complete(project_id)
 
     def report_project_failed(self, project_id):
         """报告项目完成并失败"""
+        project_id = str(project_id)
         self._failed_projects.append(project_id)
         self._complete_projects.append(project_id)
         self._on_project_complete(project_id)
 
     def report_project_sub_total(self, project_id, total):
+        project_id = str(project_id)
         self._project_sub_total[project_id] = total
 
     def report_project_sub_curr(self, project_id, curr):
+        project_id = str(project_id)
         self._project_sub_curr[project_id] = curr
 
     @property
@@ -251,12 +259,20 @@ class WorkingContext:
 
 class GlobalAppState:
     def __init__(self):
-        from utils.html_utils import Flags
+        from utils.html_utils import ArchdailyFlags, GoooodFlags
         self.running_context: dict[str: 'WorkingContext'] = {}
         self.last_context_name = ""
         self.project_id_queue = []
-        self.flag_states = {flag.name: False for flag in Flags if flag != Flags.NONE}
-        self.flag_name_to_flag = {flag.name: flag for flag in Flags}
+
+        self.flag_states = {
+            "archdaily": {flag.name: False for flag in ArchdailyFlags if flag != ArchdailyFlags.NONE},
+            "gooood": {flag.name: False for flag in GoooodFlags if flag != GoooodFlags.NONE}
+        }
+
+        self.flag_name_to_flag = {
+            "archdaily": {flag.name: flag for flag in ArchdailyFlags},
+            "gooood": {flag.name: flag for flag in GoooodFlags}
+        }
 
         # db
         self.mongo_client = None
@@ -278,6 +294,28 @@ g = create_global_app_state()  # this g is shared by all users and only be loade
 
 
 # region UI Templates
+def template_flags(flag_type):
+    if flag_type not in g.flag_states:
+        st.warning(f"flag_states[{flag_type}] not found")
+        return
+
+    def on_change(_flag_name: str):
+        ss_key_value = st.session_state[f'key_{flag_type}_{_flag_name}']
+        st.session_state[f"{flag_type}_{_flag_name}"] = ss_key_value
+        g.flag_states[flag_type][_flag_name] = ss_key_value
+        logging.info(f"{flag_type}.{_flag_name} set to {ss_key_value}")
+
+    def make_on_change(_flag_name: str):
+        # 创建闭包函数
+        return lambda: on_change(_flag_name)
+
+    for flag_name in g.flag_states[flag_type]:
+        ss_name = f"{flag_type}_{flag_name}"
+        if ss_name not in st.session_state:
+            st.session_state[ss_name] = g.flag_states[flag_type][flag_name]
+        st.checkbox(flag_name, value=st.session_state[ss_name], key=f'key_{flag_type}_{flag_name}', on_change=make_on_change(flag_name))
+
+
 def template_project_id_queue_info_box(name: str, ctx_name: str):
     if len(g.project_id_queue) == 0:
         st.info(f"没有{name}")
@@ -412,9 +450,9 @@ def template_mongodb_connection_region(db_name, db_name_setter: Callable[[str], 
 
 
 # region Archdaily Functions
-def scan_projects_folder(ctx: WorkingContext, *args):
+def archdaily__scan_projects_with_no_content_html(ctx: WorkingContext, *args):
     _ = args
-    _all_projects = os.listdir(user_settings.projects_dir)
+    _all_projects = os.listdir(user_settings.archdaily_projects_dir)
     ctx.set_total(len(_all_projects))
     g.project_id_queue = []
     for project_id in _all_projects:
@@ -422,7 +460,7 @@ def scan_projects_folder(ctx: WorkingContext, *args):
         if ctx.should_stop:
             break
         ctx.update(1)
-        folder_path = os.path.join(user_settings.projects_dir, project_id)
+        folder_path = os.path.join(user_settings.archdaily_projects_dir, project_id)
         if os.path.isdir(folder_path):
             html_file_path = os.path.join(folder_path, f'content.html')  # 扫描是否有content.html
             if not os.path.exists(html_file_path):
@@ -430,12 +468,12 @@ def scan_projects_folder(ctx: WorkingContext, *args):
         ctx.report_project_success(project_id)
 
 
-def scan_valid_project_id(ctx: WorkingContext, start_id: int, end_id: int):
+def archdaily__scan_valid_project_id_in_range(ctx: WorkingContext, start_id: int, end_id: int):
     ctx.set_total(4)
 
     # 从本地文件加载invalid_project_ids
-    if os.path.exists(user_settings.invalid_project_ids_path):
-        with open(user_settings.invalid_project_ids_path, 'r', encoding='utf-8') as f:
+    if os.path.exists(user_settings.archdaily_invalid_projects_ids_path):
+        with open(user_settings.archdaily_invalid_projects_ids_path, 'r', encoding='utf-8') as f:
             invalid_project_ids = set(json.load(f))
     else:
         invalid_project_ids = set()
@@ -446,7 +484,7 @@ def scan_valid_project_id(ctx: WorkingContext, start_id: int, end_id: int):
     project_id_queue_full: list[str] = [str(project_id) for project_id in id_range]
     ctx.set_curr(2)
     # 扣除all_projects已经存在的项目
-    all_projects_set = set(os.listdir(user_settings.projects_dir))
+    all_projects_set = set(os.listdir(user_settings.archdaily_projects_dir))
     project_id_queue = [project_id for project_id in project_id_queue_full if
                         project_id not in all_projects_set]
     ctx.set_curr(3)
@@ -457,9 +495,9 @@ def scan_valid_project_id(ctx: WorkingContext, start_id: int, end_id: int):
     g.project_id_queue = project_id_queue
 
 
-def scan_projects_folder_for_parsing_content(ctx: WorkingContext, skip_exist=False, *args):
+def archdaily__scan_projects_folder_for_parsing_content(ctx: WorkingContext, skip_exist=False, *args):
     _ = args
-    _all_projects = os.listdir(user_settings.projects_dir)
+    _all_projects = os.listdir(user_settings.archdaily_projects_dir)
     ctx.set_total(len(_all_projects))
 
     if _all_projects == 0:
@@ -473,11 +511,11 @@ def scan_projects_folder_for_parsing_content(ctx: WorkingContext, skip_exist=Fal
         if ctx.should_stop:
             break
         if skip_exist:
-            json_file_path = os.path.join(user_settings.projects_dir, project_id, 'content.json')
+            json_file_path = os.path.join(user_settings.archdaily_projects_dir, project_id, 'content.json')
             if os.path.exists(json_file_path):
                 continue
         ctx.report_project_start(project_id)
-        html_file_path = os.path.join(user_settings.projects_dir, project_id, 'content.html')
+        html_file_path = os.path.join(user_settings.archdaily_projects_dir, project_id, 'content.html')
 
         if os.path.exists(html_file_path):
             g.project_id_queue.append(project_id)
@@ -488,8 +526,295 @@ def scan_projects_folder_for_parsing_content(ctx: WorkingContext, skip_exist=Fal
     ctx.custom_data['final_msg'] = f"共计{len(_all_projects)}个项目，其中{len(g.project_id_queue)}个项目已添加到队列"
 
 
-def scan_projects_folder_for_downloading_images(ctx: WorkingContext, *args):
-    _all_projects = os.listdir(user_settings.projects_dir)
+def archdaily__scan_projects_folder_for_downloading_images(ctx: WorkingContext, *args):
+    return common__scan_projects_folder_for_downloading_images(ctx, user_settings.archdaily_projects_dir, *args)
+
+
+def archdaily__download_projects_html_to_local(ctx: WorkingContext, *args):
+    from utils.html_utils import request_project_html_archdaily, flush_success_queue
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    # 从本地文件加载invalid_project_ids
+    if os.path.exists(user_settings.archdaily_invalid_projects_ids_path):
+        with open(user_settings.archdaily_invalid_projects_ids_path, 'r', encoding='utf-8') as f:
+            invalid_project_ids = set(json.load(f))
+    else:
+        invalid_project_ids = set()
+    _total = len(g.project_id_queue)
+    assert _total > 0, "没有项目需要下载"
+    ctx.set_total(_total)
+    saving_gap = max(_total // 20, 100)  # 总数平均分20份，但是最小每100轮保存一次
+
+    def save_invalid_project_ids():
+        with open(user_settings.archdaily_invalid_projects_ids_path, 'w', encoding='utf-8') as f:
+            logging.info("保存invalid_project_ids")
+            json.dump(list(invalid_project_ids), f, ensure_ascii=False, indent=4)
+
+    def _get_html_content(project_id: str, i: int):
+        if ctx.should_stop:
+            return
+        ctx.report_project_start(project_id)
+        success = request_project_html_archdaily(project_id, i, _total, invalid_project_ids,
+                                                 force_update=False)
+        if success is True:
+            ctx.report_project_success(project_id)
+        elif success is False:
+            ctx.report_project_failed(project_id)
+        else:
+            ctx.report_project_complete(project_id)
+        ctx.update(1)
+        if i % saving_gap == 0:
+            save_invalid_project_ids()
+
+    with ThreadPoolExecutor(max_workers=32) as executor:
+        futures = (executor.submit(_get_html_content, project_id, i) for i, project_id in
+                   enumerate(g.project_id_queue))
+        for future in as_completed(futures):
+            future.result()
+
+    flush_success_queue('content_html')
+    save_invalid_project_ids()
+
+
+def archdaily__parse_htmls(ctx: WorkingContext, flags_state, *args):
+    from utils.html_utils import parse_project_content_archdaily, flush_success_queue, ArchdailyFlags
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    _total = len(g.project_id_queue)
+    assert _total > 0, "没有项目需要解析"
+
+    ctx.set_total(_total)
+
+    # get flags
+    combined_flags = ArchdailyFlags.NONE
+    for flag_name, value in flags_state.items():
+        if value:
+            logging.info(f"{flag_name} is On")
+            flag = g.flag_name_to_flag['archdaily'][flag_name]
+            combined_flags |= flag
+
+    def _parse_project_content(project_id: str, i: int):
+        if ctx.should_stop:
+            return
+        time.sleep(0.02)
+
+        ctx.report_project_start(project_id)
+
+        changed = parse_project_content_archdaily(project_id, i, _total, flags=combined_flags)
+        if changed is True:
+            ctx.report_project_success(project_id)
+        elif changed is False:
+            ctx.report_project_failed(project_id)
+        else:
+            ctx.report_project_complete(project_id)
+
+        ctx.update(1)
+
+    with ThreadPoolExecutor(max_workers=64) as executor:
+        # 注意括号，使用Generator而非List
+        futures = (executor.submit(_parse_project_content, project_id, i) for i, project_id in
+                   enumerate(g.project_id_queue))
+        logging.info("开始解析页面内容... 如果遇到image_gallery为空的情况，可能需要等待返回image_gallery结果")
+        for future in tqdm(as_completed(futures), total=len(g.project_id_queue)):
+            future.result()
+
+    flush_success_queue('content_json')
+
+
+def archdaily__download_gallery_images(ctx: WorkingContext, *args):
+    return common__download_gallery_images(ctx, user_settings.archdaily_projects_dir, *args)
+
+
+def archdaily__upload_content(ctx: WorkingContext, skip_exist: bool = True, *args):
+    return common__upload_content(ctx, user_settings.mongodb_archdaily_db_name, user_settings.archdaily_projects_dir, skip_exist, *args)
+
+
+def archdaily__scan_embedding_db(ctx: WorkingContext, skip_exist: bool = True, *args):
+    return common__scan_embedding_db(ctx, user_settings.mongodb_archdaily_db_name, user_settings.archdaily_projects_dir, skip_exist, *args)
+
+
+def archdaily__calculate_text_embedding_using_multimodal_embedding_v1_api(ctx: WorkingContext,
+                                                                          chunk_size=500,
+                                                                          chunk_overlap=50,
+                                                                          *args):
+    return common__calculate_text_embedding_using_multimodal_embedding_v1_api(ctx, user_settings.mongodb_archdaily_db_name,
+                                                                              chunk_size, chunk_overlap, *args)
+
+
+def archdaily__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext,
+                                                                  chunk_size=500,
+                                                                  chunk_overlap=50,
+                                                                  *args):
+    return common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx, user_settings.mongodb_archdaily_db_name,
+                                                                      chunk_size, chunk_overlap, *args)
+
+
+# endregion
+
+
+# region gooood
+def gooood__scrap_pages(ctx: WorkingContext, scrap_all=False, start_page=1, end_page=1, skip_exist=False, *args):
+    if start_page > end_page:
+        start_page, end_page = end_page, start_page
+    if scrap_all:
+        start_page = 1
+    if not scrap_all:
+        ctx.set_total(end_page - start_page + 1)
+    else:
+        ctx.set_total(1)
+    page = start_page - 1
+    page_count = 0
+    pages_folder = os.path.join(user_settings.gooood_results_dir, "pages")
+    os.makedirs(pages_folder, exist_ok=True)
+    while True:
+        page += 1
+
+        if ctx.should_stop:
+            break
+        if not scrap_all and page > end_page:
+            ctx.report_msg("已到达指定页数")
+            logging.info(f"已到达指定页数")
+            break
+        page_count += 1
+        ctx.update(1)
+        if scrap_all:
+            ctx.set_total(page_count + 1)
+        json_path = os.path.join(pages_folder, f"page_{str(page).zfill(5)}.json")
+        if skip_exist and os.path.exists(json_path):
+            continue
+
+        ctx.report_project_start(page)
+        try:
+            # Send a GET request to the website
+            url = user_settings.gooood_base_url.replace("<page>", str(page))
+            response = requests.get(url, headers=user_settings.headers)
+            if response.status_code != 200:
+                ctx.report_project_failed(page)
+                continue
+            data = json.loads(response.text)
+            if len(data) == 0:
+                logging.info(f"已到达最后一页")
+                ctx.report_project_complete(page)
+                break
+            with open(json_path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(data, ensure_ascii=False, indent=4))
+            ctx.report_project_success(page)
+        except requests.exceptions.RequestException as e:
+            print(f"Error accessing the website: {e}")
+            ctx.report_project_failed(page)
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            ctx.report_project_failed(page)
+
+
+def gooood__init_projects(ctx: WorkingContext, skip_exist=True, *args):
+    pages_folder = os.path.join(user_settings.gooood_results_dir, "pages")
+    if not os.path.exists(pages_folder):
+        raise Exception("pages文件夹不存在")
+    all_pages = os.listdir(pages_folder)
+    if not all_pages:
+        raise Exception("pages文件夹为空")
+    ctx.set_total(len(all_pages))
+    for page in tqdm(all_pages):
+        ctx.update(1)
+        page_path = os.path.join(pages_folder, page)
+        with open(page_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        for project_data in data:
+            project_id = str(project_data['id'])
+            project_folder = os.path.join(user_settings.gooood_projects_dir, project_id)
+            project_data_path = os.path.join(project_folder, f"{project_id}.json")
+            if skip_exist and os.path.exists(project_data_path):
+                continue
+            os.makedirs(project_folder, exist_ok=True)
+            with open(project_data_path, "w", encoding="utf-8") as f:
+                f.write(json.dumps(project_data, ensure_ascii=False, indent=4))
+
+
+def gooood__parse_projects(ctx: WorkingContext, flags_state, skip_exist=False, *args):
+    from utils.html_utils import parse_project_content_gooood, flush_success_queue, GoooodFlags
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    # get flags
+    combined_flags = GoooodFlags.NONE
+    for flag_name, value in flags_state.items():
+        if value:
+            logging.info(f"{flag_name} is On")
+            flag = g.flag_name_to_flag['gooood'][flag_name]
+            combined_flags |= flag
+    if not os.path.exists(user_settings.gooood_projects_dir):
+        raise Exception("projects文件夹不存在")
+
+    all_projects = os.listdir(user_settings.gooood_projects_dir)
+    if not all_projects:
+        raise Exception("projects文件夹为空")
+    _total = len(all_projects)
+    ctx.set_total(_total)
+
+    def _parse_project_content(project_id: str, i: int):
+        if ctx.should_stop:
+            return
+        time.sleep(0.1)
+        ctx.update(1)
+        project_data_path = os.path.join(user_settings.gooood_projects_dir, project_id, f"{project_id}.json")
+        project_content_path = os.path.join(user_settings.gooood_projects_dir, project_id, f"content.json")
+        if skip_exist and os.path.exists(project_content_path):
+            return
+        ctx.report_project_start(project_id)
+        changed = parse_project_content_gooood(project_id, i, _total, flags=combined_flags)
+        if changed is True:
+            ctx.report_project_success(project_id)
+        elif changed is False:
+            ctx.report_project_failed(project_id)
+        else:
+            ctx.report_project_complete(project_id)
+
+    with ThreadPoolExecutor(max_workers=64) as executor:
+        futures = (executor.submit(_parse_project_content, project_id, i) for i, project_id in
+                   enumerate(all_projects))
+        for future in tqdm(as_completed(futures), total=len(all_projects)):
+            future.result()
+
+    flush_success_queue('content_json')
+
+
+def gooood__scan_projects_folder_for_downloading_images(ctx: WorkingContext, *args):
+    return common__scan_projects_folder_for_downloading_images(ctx, user_settings.gooood_projects_dir, *args)
+
+
+def gooood__download_gallery_images(ctx: WorkingContext, *args):
+    return common__download_gallery_images(ctx, user_settings.gooood_projects_dir, *args)
+
+
+
+def gooood__upload_content(ctx: WorkingContext, skip_exist: bool = True, *args):
+    return common__upload_content(ctx, user_settings.mongodb_gooood_db_name, user_settings.gooood_projects_dir, skip_exist, *args)
+
+
+def gooood__scan_embedding_db(ctx: WorkingContext, skip_exist: bool = True, *args):
+    return common__scan_embedding_db(ctx, user_settings.mongodb_gooood_db_name, user_settings.gooood_projects_dir, skip_exist, *args)
+
+
+def gooood__calculate_text_embedding_using_multimodal_embedding_v1_api(ctx: WorkingContext,
+                                                                          chunk_size=500,
+                                                                          chunk_overlap=50,
+                                                                          *args):
+    return common__calculate_text_embedding_using_multimodal_embedding_v1_api(ctx, user_settings.mongodb_gooood_db_name,
+                                                                              chunk_size, chunk_overlap, *args)
+
+
+def gooood__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext,
+                                                                  chunk_size=500,
+                                                                  chunk_overlap=50,
+                                                                  *args):
+    return common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx, user_settings.mongodb_gooood_db_name,
+                                                                      chunk_size, chunk_overlap, *args)
+# endregion
+
+
+# region common
+def common__scan_projects_folder_for_downloading_images(ctx: WorkingContext, projects_dir, *args):
+    _all_projects = os.listdir(projects_dir)
     if _all_projects == 0:
         raise Exception("没有找到任何项目")
 
@@ -503,7 +828,7 @@ def scan_projects_folder_for_downloading_images(ctx: WorkingContext, *args):
         if ctx.should_stop:
             break
         ctx.update(1)
-        folder_path = os.path.join(user_settings.projects_dir, folder_name)
+        folder_path = os.path.join(projects_dir, folder_name)
         if not os.path.isdir(folder_path):
             continue
         json_file_path = os.path.join(folder_path, 'content.json')
@@ -527,99 +852,8 @@ def scan_projects_folder_for_downloading_images(ctx: WorkingContext, *args):
         'final_msg'] = f"已扫描{len(_all_projects)}个项目，其中{content_not_exist_count}个项目没有content.json文件，{len(g.project_id_queue)}个项目需要下载图像"
 
 
-def download_projects_html_to_local(ctx: WorkingContext, *args):
-    from utils.html_utils import request_project_html, flush_success_queue
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    # 从本地文件加载invalid_project_ids
-    if os.path.exists(user_settings.invalid_project_ids_path):
-        with open(user_settings.invalid_project_ids_path, 'r', encoding='utf-8') as f:
-            invalid_project_ids = set(json.load(f))
-    else:
-        invalid_project_ids = set()
-    _total = len(g.project_id_queue)
-    assert _total > 0, "没有项目需要下载"
-    ctx.set_total(_total)
-    saving_gap = max(_total // 20, 100)  # 总数平均分20份，但是最小每100轮保存一次
-
-    def save_invalid_project_ids():
-        with open(user_settings.invalid_project_ids_path, 'w', encoding='utf-8') as f:
-            logging.info("保存invalid_project_ids")
-            json.dump(list(invalid_project_ids), f, ensure_ascii=False, indent=4)
-
-    def _get_html_content(project_id: str, i: int):
-        if ctx.should_stop:
-            return
-        ctx.report_project_start(project_id)
-        success = request_project_html(project_id, i, _total, invalid_project_ids,
-                                       force_update=False)
-        if success is True:
-            ctx.report_project_success(project_id)
-        elif success is False:
-            ctx.report_project_failed(project_id)
-        else:
-            ctx.report_project_complete(project_id)
-        ctx.update(1)
-        if i % saving_gap == 0:
-            save_invalid_project_ids()
-
-    with ThreadPoolExecutor(max_workers=32) as executor:
-        futures = (executor.submit(_get_html_content, project_id, i) for i, project_id in
-                   enumerate(g.project_id_queue))
-        for future in as_completed(futures):
-            future.result()
-
-    flush_success_queue('content_html')
-    save_invalid_project_ids()
-
-
-def parse_htmls(ctx: WorkingContext, flags_state, *args):
-    from utils.html_utils import parse_project_content, flush_success_queue, Flags
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    _total = len(g.project_id_queue)
-    assert _total > 0, "没有项目需要解析"
-
-    ctx.set_total(_total)
-
-    # get flags
-    combined_flags = Flags.NONE
-    for flag_name, value in flags_state.items():
-        if value:
-            logging.info(f"{flag_name} is On")
-            flag = g.flag_name_to_flag[flag_name]
-            combined_flags |= flag
-
-    def _parse_project_content(project_id: str, i: int):
-        if ctx.should_stop:
-            return
-        time.sleep(0.02)
-
-        ctx.report_project_start(project_id)
-
-        changed = parse_project_content(project_id, i, _total, flags=combined_flags)
-        if changed is True:
-            ctx.report_project_success(project_id)
-        elif changed is False:
-            ctx.report_project_failed(project_id)
-        else:
-            ctx.report_project_complete(project_id)
-
-        ctx.update(1)
-
-    with ThreadPoolExecutor(max_workers=64) as executor:
-        # 注意括号，使用Generator而非List
-        futures = (executor.submit(_parse_project_content, project_id, i) for i, project_id in
-                   enumerate(g.project_id_queue))
-        logging.info("开始解析页面内容... 如果遇到image_gallery为空的情况，可能需要等待返回image_gallery结果")
-        for future in tqdm(as_completed(futures), total=len(g.project_id_queue)):
-            future.result()
-
-    flush_success_queue('content_json')
-
-
-def download_gallery_images(ctx: WorkingContext, *args):
-    from utils.html_utils import download_images
+def common__download_gallery_images(ctx: WorkingContext, projects_dir, *args):
+    from utils.html_utils import download_images_common
     from concurrent.futures import ThreadPoolExecutor, as_completed
     _total = len(g.project_id_queue)
     assert _total > 0, "没有需要下载图像的项目"
@@ -634,8 +868,8 @@ def download_gallery_images(ctx: WorkingContext, *args):
             return
 
         ctx.report_project_start(project_id)
-        success = download_images(project_id, i, _total, 'large',
-                                  img_index_change_callback=_on_img_index_change)
+        success = download_images_common(projects_dir, project_id, i, _total, 'large',
+                                         img_index_change_callback=_on_img_index_change)
         if success is True:
             ctx.report_project_success(project_id)
         elif success is False:
@@ -652,14 +886,14 @@ def download_gallery_images(ctx: WorkingContext, *args):
     logging.info('complete')
 
 
-def upload_content(ctx: WorkingContext, skip_exist: bool = True, *args):
+def common__upload_content(ctx: WorkingContext, db_name, projects_dir, skip_exist: bool = True, *args):
     if g.mongo_client is None:
         raise Exception("MongoDB连接失败")
-    db = g.mongo_client[user_settings.mongodb_archdaily_db_name]
+    db = g.mongo_client[db_name]
 
     content_collection = db['content_collection']
 
-    all_projects = os.listdir(user_settings.projects_dir)
+    all_projects = os.listdir(projects_dir)
     ctx.set_total(len(all_projects))
 
     def _handle_project(project_id: str):
@@ -667,7 +901,7 @@ def upload_content(ctx: WorkingContext, skip_exist: bool = True, *args):
             return
         ctx.report_project_start(project_id)
         ctx.update(1)
-        project_path = os.path.join(user_settings.projects_dir, project_id)
+        project_path = os.path.join(projects_dir, project_id)
 
         # 检查数据库中是否存在该 _id
         if skip_exist:
@@ -714,15 +948,15 @@ def upload_content(ctx: WorkingContext, skip_exist: bool = True, *args):
     logging.info('complete')
 
 
-def scan_embedding_db(ctx: WorkingContext, skip_exist: bool = True, *args):
+def common__scan_embedding_db(ctx: WorkingContext, db_name, projects_dir, skip_exist: bool = True, *args):
     if g.mongo_client is None:
         raise Exception("MongoDB连接失败")
-    db = g.mongo_client[user_settings.mongodb_archdaily_db_name]
+    db = g.mongo_client[db_name]
     content_collection = db['content_collection']
     content_embedding_collection = db['content_embedding']
 
     # 遍历每个项目
-    all_projects = os.listdir(user_settings.projects_dir)
+    all_projects = os.listdir(projects_dir)
     ctx.set_total(len(all_projects))
     g.project_id_queue.clear()
     for project_id in tqdm(all_projects):
@@ -764,11 +998,15 @@ def scan_embedding_db(ctx: WorkingContext, skip_exist: bool = True, *args):
         ctx.report_project_success(project_id)
 
 
-def calculate_text_embedding_using_multimodal_embedding_v1_api(ctx: WorkingContext,
-                                                               chunk_size=500,
-                                                               chunk_overlap=50,
-                                                               *args):
-    raise Exception("当前方案已弃用")
+def common__calculate_text_embedding_using_multimodal_embedding_v1_api(ctx: WorkingContext, db_name,
+                                                                       chunk_size=500,
+                                                                       chunk_overlap=50,
+                                                                       *args):
+    warnings.warn(
+        "calculate_text_embedding_using_multimodal_embedding_v1_api 已弃用",
+        DeprecationWarning,
+        stacklevel=2
+    )
     _total = len(g.project_id_queue)
     assert _total > 0, "没有需要处理的项目"
     ctx.set_total(_total)
@@ -777,7 +1015,7 @@ def calculate_text_embedding_using_multimodal_embedding_v1_api(ctx: WorkingConte
     from apis.multimodal_embedding_v1_api import embed_text
     if g.mongo_client is None:
         raise Exception("MongoDB连接失败")
-    db = g.mongo_client[user_settings.mongodb_archdaily_db_name]
+    db = g.mongo_client[db_name]
     content_collection = db['content_collection']
     content_embedding_collection = db['content_embedding']
 
@@ -848,17 +1086,17 @@ def calculate_text_embedding_using_multimodal_embedding_v1_api(ctx: WorkingConte
             future.result()
 
 
-def calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext,
-                                                       chunk_size=500,
-                                                       chunk_overlap=50,
-                                                       *args):
+def common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext, db_name,
+                                                               chunk_size=500,
+                                                               chunk_overlap=50,
+                                                               *args):
     _total = len(g.project_id_queue)
     assert _total > 0, "没有项目需要下载"
     ctx.set_total(_total)
 
     if g.mongo_client is None:
         raise Exception("MongoDB连接失败")
-    db = g.mongo_client[user_settings.mongodb_archdaily_db_name]
+    db = g.mongo_client[db_name]
     content_collection = db['content_collection']
     content_embedding_collection = db['content_embedding']
 

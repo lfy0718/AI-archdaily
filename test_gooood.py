@@ -4,8 +4,6 @@ import time
 
 import requests
 from bs4 import BeautifulSoup
-
-base_url = "https://dashboard.gooood.cn/api/wp/v2/fetch-posts?page=<page>&per_page=18&post_type%5B0%5D=post&post_type%5B1%5D=jobs"
 from config import *
 
 pages_folder = "./results/gooood/pages"
@@ -15,7 +13,7 @@ while True:
 
     try:
         # Send a GET request to the website
-        url = base_url.replace("<page>", str(page))
+        url = user_settings.gooood_base_url.replace("<page>", str(page))
         print(f"Fetching page {page}, url = {url}")
         response = requests.get(url, headers=user_settings.headers)
         response.raise_for_status()  # Raise an error for bad status codes

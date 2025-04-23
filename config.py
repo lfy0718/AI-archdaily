@@ -7,19 +7,9 @@ import json
 import logging
 import os
 
-PROJECT_NAME = "AI-Archdaily"
-RESOURCES_DIR = "./resources"
-
-
 class UserSettings:
     def __init__(self):
-        # these are default values
-        self.global_scale = 1.0
-
-        self.base_url = "https://www.archdaily.com/"
-        self.projects_dir = './results/projects'
-        self.invalid_project_ids_path = './results/invalid_project_ids.json'
-
+        # region shared
         self.headers = {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "Accept-Encoding": "gzip, deflate, br, zstd",
@@ -37,14 +27,31 @@ class UserSettings:
             "Upgrade-Insecure-Requests": "1",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36 Edg/135.0.0.0"
         }
-        self.ignore_keywords = {
+        # endregion
+
+        # region archdaily
+        self.archdaily_base_url = "https://www.archdaily.com/"
+        self.archdaily_results_dir = "./results/archdaily"
+        self.archdaily_projects_dir = './results/archdaily/projects'
+        self.archdaily_invalid_projects_ids_path = './results/invalid_project_ids.json'
+        self.archdaily_ignore_keywords = {
             "Projects", "Images", "Products", "Folders", "AD Plus",
             "Benefits", "Archive", "Content", "Maps", "Audio",
             "Check the latest Chairs", "Check the latest Counters"
         }
+        # endregion
+
+
+        # region gooood
+        self.gooood_base_url = "https://dashboard.gooood.cn/api/wp/v2/fetch-posts?page=<page>&per_page=18&post_type%5B0%5D=post&post_type%5B1%5D=jobs"
+        self.gooood_results_dir = "./results/gooood"
+        self.gooood_projects_dir = "./results/gooood/projects"
+
+        # endregion
+
         self.mongodb_host = 'mongodb://localhost:32768/?directConnection=true'
-        self.mongodb_archdaily_db_name = 'Test-AI-Archdaily'
-        self.mongodb_gooood_db_name = 'Test-AI-Gooood'
+        self.mongodb_archdaily_db_name = 'AI-Archdaily'
+        self.mongodb_gooood_db_name = 'AI-Gooood'
 
         # qwen api key
         self.api_keys = ['put your api key here', ]
@@ -57,7 +64,7 @@ def load_user_settings(_user_settings: UserSettings) -> None:
             json_data: dict = json.load(file)
         for key in _user_settings.__dict__.keys():
             if key in json_data:
-                if key == "ignore_keywords":
+                if key == "archdaily_ignore_keywords":
                     setattr(_user_settings, key, set(json_data[key]))
                 else:
                     setattr(_user_settings, key, json_data[key])
@@ -73,7 +80,7 @@ def save_user_settings(_user_settings: UserSettings) -> None:
     logging.info(f'saving user_settings to {os.path.abspath(data_path)}')
     data = {}
     for key in _user_settings.__dict__:
-        if key == "ignore_keywords":
+        if key == "archdaily_ignore_keywords":
             data[key] = list(getattr(_user_settings, key))
         else:
             data[key] = getattr(_user_settings, key)

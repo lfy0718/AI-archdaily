@@ -19,11 +19,11 @@ db = client[user_settings.mongodb_db_name]
 
 content_collection = db['content_collection']
 
-all_projects = os.listdir(user_settings.projects_dir)[:100] # 取前100个做实验
+all_projects = os.listdir(user_settings.archdaily_projects_dir)[:100] # 取前100个做实验
 
 # 遍历每个项目文件夹
 for project_id in tqdm(all_projects):
-    project_path = os.path.join(user_settings.projects_dir, project_id)
+    project_path = os.path.join(user_settings.archdaily_projects_dir, project_id)
 
     # 检查数据库中是否存在该 _id
     if skip_exist:

@@ -34,7 +34,7 @@ def get_features(text):
 
 
 # 遍历每个项目
-all_projects = os.listdir(user_settings.projects_dir)[:100]  # 取前100个做实验
+all_projects = os.listdir(user_settings.archdaily_projects_dir)[:100]  # 取前100个做实验
 for project_id in tqdm(all_projects):
     # 判断当前 project_id 是否已存在于 content_embedding_collection 中
     existing_embeddings = content_embedding_collection.count_documents({'project_id': project_id})

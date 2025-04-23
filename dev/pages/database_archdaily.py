@@ -26,7 +26,7 @@ def main():
 def _step1_upload_content():
     skip_exist = st.checkbox("跳过已存在的项目", key="DBStep1-upload")
     b.template_start_work_with_progress("上传项目", "DBStep1-upload",
-                                        b.upload_content, skip_exist,
+                                        b.archdaily__upload_content, skip_exist,
                                         st_show_detail_number=True, st_show_detail_project_id=True,
                                         st_button_icon="✨", )
 
@@ -35,9 +35,9 @@ def _step2_calculating_embedding():
     st.info("首先扫描需要计算嵌入向量的项目")
     skip_exist = st.checkbox("跳过已存在的项目", key="DBStep2-calculate")
     b.template_start_work_with_progress("扫描需要计算嵌入向量的项目", "DBStep2-scan",
-                                        b.scan_embedding_db, skip_exist,
+                                        b.archdaily__scan_embedding_db, skip_exist,
                                         st_show_detail_number=True, st_show_detail_project_id=True,
-                                        st_button_icon="🔍",st_button_type="secondary")
+                                        st_button_icon="🔍", st_button_type="secondary")
     st.divider()
     # st.info("计算嵌入向量并写入数据库")
     _plan = st.radio("选择计算嵌入向量的方案", ["**方案1**", "**方案2**"], captions=["multimodal_embedding_v1(online)", "gme_Qwen2_vl_2B(local)"],
@@ -48,7 +48,7 @@ def _step2_calculating_embedding():
         st.warning("该方案速度较慢，目前已不推荐，请使用本地部署的方案2")
         b.template_project_id_queue_info_box("需要计算嵌入向量的项目", "DBStep2-calculate2")
         b.template_start_work_with_progress("计算嵌入向量(使用multimodal_embedding_v1)", "DBStep2-calculate1",
-                                            b.calculate_text_embedding_using_multimodal_embedding_v1_api,
+                                            b.archdaily__calculate_text_embedding_using_multimodal_embedding_v1_api,
                                             st_show_detail_number=True, st_show_detail_project_id=True,
                                             st_button_icon="✨", ctx_enable_ctx_scope_check=True)
 
@@ -56,7 +56,7 @@ def _step2_calculating_embedding():
         st.caption("使用本地部署的gme-Qwen2-VL-2B-Instruct， 输出维度1536")
         b.template_project_id_queue_info_box("需要计算嵌入向量的项目", "DBStep2-calculate2")
         b.template_start_work_with_progress("计算嵌入向量(使用gme-Qwen2-VL-2B-Instruct)", "DBStep2-calculate2",
-                                            b.calculate_text_embedding_using_gme_Qwen2_VL_2B_api,
+                                            b.archdaily__calculate_text_embedding_using_gme_Qwen2_VL_2B_api,
                                             st_show_detail_number=True, st_show_detail_project_id=True,
                                             st_button_icon="✨", ctx_enable_ctx_scope_check=True)
     if _plan == "**方案1**":

@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
 from config import *
-from utils.html_utils import request_project_html, flush_success_queue
+from utils.html_utils import request_project_html_archdaily, flush_success_queue
 from utils.logging_utils import init_logger
 
 init_logger('step5_1')
@@ -15,12 +15,12 @@ def main():
         "本程序将从已有的文件夹中，查找是否存在content.html文件，如果不存在，则爬取页面内容，并保存为content.html文件")
     logging.info(f"正在扫描本地文件...")
 
-    all_projects = os.listdir(user_settings.projects_dir)
+    all_projects = os.listdir(user_settings.archdaily_projects_dir)
     project_id_queue: list[str] = []
 
     # 遍历项目目录下的所有子文件夹
     for project_id in tqdm(all_projects):
-        folder_path = os.path.join(user_settings.projects_dir, project_id)
+        folder_path = os.path.join(user_settings.archdaily_projects_dir, project_id)
         if os.path.isdir(folder_path):
             html_file_path = os.path.join(folder_path, f'content.html')  # 扫描是否有content.html
             if not os.path.exists(html_file_path):
@@ -34,7 +34,7 @@ def main():
     _invalid_project_ids = set()  # 在这个部分我们不需要用到这个set， 理论上现有的所有文件夹都应该是能够访问的，如果这里面出现了无法访问的文件夹，说明存在问题。
 
     def _get_html_content(project_id: str, i: int):
-        request_project_html(project_id, i, len(project_id_queue), _invalid_project_ids, force_update=False)
+        request_project_html_archdaily(project_id, i, len(project_id_queue), _invalid_project_ids, force_update=False)
 
     # 使用ThreadPoolExecutor进行并发爬取
     with ThreadPoolExecutor(max_workers=32) as executor:
