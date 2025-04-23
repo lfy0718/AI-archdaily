@@ -1,7 +1,3 @@
-# -*- coding: utf-8 -*-
-# @Author  : Yiheng Feng
-# @Time    : 4/22/2025 3:04 PM
-# @Function:
 import base64
 import time
 from http import HTTPStatus
@@ -12,7 +8,7 @@ import dashscope
 from config import *
 
 _last_request_times = {api_key: -1.0 for api_key in user_settings.api_keys}
-def embed_text(text, api_key) -> tuple[Optional[list], int]:
+def embed_text(text:str, api_key) -> tuple[Optional[list], int]:
     # https://bailian.console.aliyun.com/?tab=api#/api/?type=model&url=https%3A%2F%2Fhelp.aliyun.com%2Fdocument_detail%2F2712517.html
     # 文本:
     #   - 语言/格式: 中英文文本
@@ -36,7 +32,7 @@ def embed_text(text, api_key) -> tuple[Optional[list], int]:
     return None, resp.status_code
 
 
-def embed_image(image_path, api_key):
+def embed_image(image_path: str, api_key):
     # 图片:
     #   - 格式: JPG、PNG、BMP
     #   - 输入方式: 支持Base64编码或URL形式

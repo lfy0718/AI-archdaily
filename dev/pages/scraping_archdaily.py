@@ -3,9 +3,7 @@
 # @Time    : 4/21/2025 3:39 PM
 # @Function:
 import logging
-
 import streamlit as st
-
 from dev import backend as b
 
 
@@ -66,9 +64,9 @@ def _step1_download_html():
 def _step2_parse_html():
     st.subheader("步骤2： 解析项目html文件")
     st.info(" 首先需要扫描本地文件")
-
+    skip_exist = st.checkbox("跳过已经存在的content.json")
     result = b.template_start_work_with_progress("开始扫描", "Step2-scan",
-                                                 b.scan_projects_folder_for_parsing_content,
+                                                 b.scan_projects_folder_for_parsing_content, skip_exist,
                                                  st_button_type='secondary', st_button_icon="🔍")
     if "num_projects_with_no_content_html" in result and result['num_projects_with_no_content_html']:
         st.warning(f"{result['num_projects_with_no_content_html']}个项目没有content.html，请注意")
@@ -91,7 +89,6 @@ def _step2_parse_html():
             st.session_state[flag_name] = b.g.flag_states[flag_name]
         st.checkbox(flag_name, value=st.session_state[flag_name], key=f"key_{flag_name}", on_change=make_on_change(flag_name))
 
-    st.write(b.g.flag_states)
     b.template_project_id_queue_info_box("需要解析的html", "Step2-html")
     b.template_start_work_with_progress("开始解析html", "Step2-html",
                                         b.parse_htmls, b.g.flag_states,

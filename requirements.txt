@@ -2,7 +2,7 @@ pillow==10.0.1
 numpy==1.26.4
 torch
 torchvision
-transformers==4.38.2
+transformers
 peft~=0.13.0
 requests
 beautifulsoup4

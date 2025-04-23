@@ -2,7 +2,10 @@
 # @Author  : Yiheng Feng
 # @Time    : 4/21/2025 3:40 PM
 # @Function:
+import atexit
+import json
 import logging
+import os
 import threading
 import time
 import traceback
@@ -12,23 +15,25 @@ from typing import Callable, Optional, Any
 import streamlit as st
 from tqdm import tqdm
 
-from config import *
+from utils import db_utils
 
-logging.info("============================================================")
+logging.info("Backend Reloaded ============================================================")
 
 
-def check_ctx_scope(ctx_name):
-    ctx_name = ctx_name.replace("_", "-")
-    if g.last_context_name != "":
-        last_scope = g.last_context_name.split("-")[0]
-        curr_scope = ctx_name.split("-")[0]
-        if last_scope != curr_scope:
-            return False
-    return True
+@st.cache_resource
+def load_config():
+    # config will only be loaded once during the whole lifetime
+    # 也可以让装饰器改为st.cache， 这样每次刷新页面就会重新加载，可以方便调试
+    import config
+    return config
+
+
+config = load_config()  # use cached config
+user_settings = config.user_settings
 
 
 class WorkingContext:
-
+    # 自定义的创建工作任务的上下文
     def __init__(self, ctx_name: str,
                  working_content: Callable[['WorkingContext', Any, ...], None],
                  *args,
@@ -65,7 +70,7 @@ class WorkingContext:
             self._msg = f"{self._ctx_name}.singleton set to True and Another tasks is running"
             logging.warning(self._msg)
             return
-        if self._enable_ctx_scope_check and not check_ctx_scope(self._ctx_name):
+        if self._enable_ctx_scope_check and not WorkingContext.check_ctx_scope(self._ctx_name):
             self._msg = f"Enable Context Scope Check enabled, but current scope: {self._ctx_name} is not same as last scope: {g.last_context_name}"
             logging.warning(self._msg)
             self._success = False
@@ -90,10 +95,10 @@ class WorkingContext:
         logging.info(self._msg)
 
         def _func():
-            time.sleep(0.1)  # 等待UI更新完毕后再开始
+            time.sleep(0.1)  # 加一个小小的延迟，等待UI更新完毕后再开始
             try:
                 # ==========================================================================================
-                self._working_content(self, *self.args)  # --------------------main content --------------------传入ctx参数
+                self._working_content(self, *self.args)  # main content 需要传入ctx参数
                 # ==========================================================================================
                 if self._on_complete_callback:
                     logging.info(f"{self._ctx_name} 正在执行完成回调函数")
@@ -115,7 +120,9 @@ class WorkingContext:
         threading.Thread(target=_func).start()
 
     def stop_work(self):
-        self._should_stop = True
+        self._should_stop = True  # 标记为停止，并等待线程结束，线程中的循环需要加入对_should_stop的判断
+        while self._is_running:
+            time.sleep(0.1)
 
     def get_status(self):
         status = {'is_running': self._is_running, 'success': self._success,
@@ -123,6 +130,7 @@ class WorkingContext:
         status.update(self.custom_data)
         return status
 
+    # region project related status
     def get_lasting_time(self, project_id):
         if project_id in self._project_start_times:
             return time.time() - self._project_start_times[project_id]
@@ -151,6 +159,8 @@ class WorkingContext:
                 return f"{project_id} {int(self.get_lasting_time(project_id))}s"
         else:
             return f"{project_id} Complete"
+
+    # endregion
 
     # region put these in working content
     def set_total(self, total):
@@ -214,6 +224,8 @@ class WorkingContext:
     def should_stop(self):
         return self._should_stop
 
+    # endregion
+
     @property
     def success_projects(self):
         return self._success_projects
@@ -226,7 +238,15 @@ class WorkingContext:
     def running_projects(self):
         return self._running_projects
 
-    # endregion
+    @staticmethod
+    def check_ctx_scope(ctx_name):
+        ctx_name = ctx_name.replace("_", "-")
+        if g.last_context_name != "":
+            last_scope = g.last_context_name.split("-")[0]
+            curr_scope = ctx_name.split("-")[0]
+            if last_scope != curr_scope:
+                return False
+        return True
 
 
 class GlobalAppState:
@@ -254,36 +274,41 @@ def create_global_app_state():
     return GlobalAppState()
 
 
-g = create_global_app_state()  # this g is shared by all users
+g = create_global_app_state()  # this g is shared by all users and only be loaded once
 
 
+# region UI Templates
 def template_project_id_queue_info_box(name: str, ctx_name: str):
     if len(g.project_id_queue) == 0:
         st.info(f"没有{name}")
-    elif not check_ctx_scope(ctx_name):
+    elif not WorkingContext.check_ctx_scope(ctx_name):
         # st.warning(f"当前project_id_queue的项目为其他{g.last_context_name}, 不适用于当前{ctx_name}")
         pass
     else:
         st.info(f"{name}数量: {len(g.project_id_queue)}")
 
 
-def template_start_work_with_progress(label, ctx_name, working_content: Callable[['WorkingContext', Any, ...], None], *args,
+def template_start_work_with_progress(label, ctx_name, working_content: Callable[['WorkingContext', Any, ...], None],
+                                      *args,
                                       ctx_singleton=True, ctx_enable_ctx_scope_check=False,
-                                      st_show_detail_number=False, st_show_detail_project_id=False, st_button_type='primary', st_button_icon=None) -> dict:
+                                      st_show_detail_number=False, st_show_detail_project_id=False,
+                                      st_button_type='primary', st_button_icon=None) -> dict:
     disabled = False
     suffix = ""
     if ctx_enable_ctx_scope_check:
         # pre-check
-        if not check_ctx_scope(ctx_name):
+        if not WorkingContext.check_ctx_scope(ctx_name):
             disabled |= True
             suffix += " ctx_scope unmatch"
     if ctx_name in g.running_context:
         disabled |= True
         suffix += " running"
 
-    if st.button(label+suffix, use_container_width=True, type=st_button_type, key=f"run_{ctx_name}", icon=st_button_icon, disabled=disabled):
+    if st.button(label + suffix, use_container_width=True, type=st_button_type, key=f"run_{ctx_name}",
+                 icon=st_button_icon, disabled=disabled):
         logging.info(f"{ctx_name}按钮被点击")
-        ctx = WorkingContext(ctx_name, working_content, *args, singleton=ctx_singleton, enable_ctx_scope_check=ctx_enable_ctx_scope_check)
+        ctx = WorkingContext(ctx_name, working_content, *args, singleton=ctx_singleton,
+                             enable_ctx_scope_check=ctx_enable_ctx_scope_check)
         ctx.start_work()
 
     if ctx_name not in g.running_context:
@@ -327,7 +352,8 @@ def template_start_work_with_progress(label, ctx_name, working_content: Callable
             success_projects_placeholder.text(f"成功: {len(ctx.success_projects)}")
             failed_projects_placeholder.text(f"失败: {len(ctx.failed_projects)}")
             if st_show_detail_project_id:
-                running_projects_detail_placeholder.text('\n'.join([ctx.get_project_detail_info_str(project_id) for project_id in ctx.running_projects]))
+                running_projects_detail_placeholder.text(
+                    '\n'.join([ctx.get_project_detail_info_str(project_id) for project_id in ctx.running_projects]))
                 success_projects_detail_placeholder.text('\n'.join(ctx.success_projects[-10:][::-1]))
                 failed_projects_detail_placeholder.text('\n'.join(ctx.failed_projects[-10:][::-1]))
         if is_running and should_stop:
@@ -347,6 +373,45 @@ def template_start_work_with_progress(label, ctx_name, working_content: Callable
     return status
 
 
+def template_mongodb_connection_region(db_name, db_name_setter: Callable[[str], None]) -> bool:
+    if g.mongo_client is None:
+        db_host = st.text_input("MongoDB Host", user_settings.mongodb_host)
+        col1, col2 = st.columns(2)
+        if col1.button("保存", use_container_width=True):
+            user_settings.mongodb_host = db_host
+            config.save_user_settings(user_settings)
+        if col2.button("保存并连接", use_container_width=True, type="primary"):
+            user_settings.mongodb_host = db_host
+            config.save_user_settings(user_settings)
+            success, g.mongo_client = db_utils.get_mongo_client(db_host)
+            if not success:
+                st.warning("连接失败")
+            else:
+                st.rerun()
+        return False
+    assert g.mongo_client is not None
+    db_names = g.mongo_client.list_database_names()
+    if db_name not in db_names:
+        st.warning(f"无法连接到数据库({db_name})")
+        db_name = st.text_input("DB Name", db_name)
+        if st.button("保存并刷新"):
+            db_name_setter(db_name)
+            config.save_user_settings(user_settings)
+            logging.info(f"已切换至数据库({db_name})")
+            st.rerun()
+    else:
+        col1, col2 = st.columns([8, 2])
+        col1.success(f"🌿已成功连接至数据库 {db_name}")
+        if col2.button("断开连接", use_container_width=True):
+            g.mongo_client.close()
+            g.mongo_client = None
+            st.rerun()
+
+
+# endregion
+
+
+# region Archdaily Functions
 def scan_projects_folder(ctx: WorkingContext, *args):
     _ = args
     _all_projects = os.listdir(user_settings.projects_dir)
@@ -392,7 +457,7 @@ def scan_valid_project_id(ctx: WorkingContext, start_id: int, end_id: int):
     g.project_id_queue = project_id_queue
 
 
-def scan_projects_folder_for_parsing_content(ctx: WorkingContext, *args):
+def scan_projects_folder_for_parsing_content(ctx: WorkingContext, skip_exist=False, *args):
     _ = args
     _all_projects = os.listdir(user_settings.projects_dir)
     ctx.set_total(len(_all_projects))
@@ -407,8 +472,13 @@ def scan_projects_folder_for_parsing_content(ctx: WorkingContext, *args):
         ctx.update(1)
         if ctx.should_stop:
             break
+        if skip_exist:
+            json_file_path = os.path.join(user_settings.projects_dir, project_id, 'content.json')
+            if os.path.exists(json_file_path):
+                continue
         ctx.report_project_start(project_id)
         html_file_path = os.path.join(user_settings.projects_dir, project_id, 'content.html')
+
         if os.path.exists(html_file_path):
             g.project_id_queue.append(project_id)
         else:
@@ -453,7 +523,8 @@ def scan_projects_folder_for_downloading_images(ctx: WorkingContext, *args):
         if len(image_gallery_names) < len(image_gallery_images):
             g.project_id_queue.append(folder_name)
 
-    ctx.custom_data['final_msg'] = f"已扫描{len(_all_projects)}个项目，其中{content_not_exist_count}个项目没有content.json文件，{len(g.project_id_queue)}个项目需要下载图像"
+    ctx.custom_data[
+        'final_msg'] = f"已扫描{len(_all_projects)}个项目，其中{content_not_exist_count}个项目没有content.json文件，{len(g.project_id_queue)}个项目需要下载图像"
 
 
 def download_projects_html_to_local(ctx: WorkingContext, *args):
@@ -538,7 +609,8 @@ def parse_htmls(ctx: WorkingContext, flags_state, *args):
 
     with ThreadPoolExecutor(max_workers=64) as executor:
         # 注意括号，使用Generator而非List
-        futures = (executor.submit(_parse_project_content, project_id, i) for i, project_id in enumerate(g.project_id_queue))
+        futures = (executor.submit(_parse_project_content, project_id, i) for i, project_id in
+                   enumerate(g.project_id_queue))
         logging.info("开始解析页面内容... 如果遇到image_gallery为空的情况，可能需要等待返回image_gallery结果")
         for future in tqdm(as_completed(futures), total=len(g.project_id_queue)):
             future.result()
@@ -634,19 +706,75 @@ def upload_content(ctx: WorkingContext, skip_exist: bool = True, *args):
         # else:
         #     logging.info(f"project: {project_id} 更新成功，修改计数: {content_result.modified_count}")
         ctx.report_project_success(project_id)
-    with ThreadPoolExecutor(max_workers=4) as executor:
+
+    with ThreadPoolExecutor(max_workers=16) as executor:
         futures = (executor.submit(_handle_project, project_id) for project_id in all_projects)
-        for future in as_completed(futures):
+        for future in tqdm(as_completed(futures), total=len(all_projects)):
             future.result()
     logging.info('complete')
 
-def calculate_text_embedding(ctx: WorkingContext,
-                             skip_exist: bool = True,
-                             chunk_size=500,
-                             chunk_overlap=50,
-                             *args):
+
+def scan_embedding_db(ctx: WorkingContext, skip_exist: bool = True, *args):
+    if g.mongo_client is None:
+        raise Exception("MongoDB连接失败")
+    db = g.mongo_client[user_settings.mongodb_archdaily_db_name]
+    content_collection = db['content_collection']
+    content_embedding_collection = db['content_embedding']
+
+    # 遍历每个项目
+    all_projects = os.listdir(user_settings.projects_dir)
+    ctx.set_total(len(all_projects))
+    g.project_id_queue.clear()
+    for project_id in tqdm(all_projects):
+        if ctx.should_stop:
+            break
+        ctx.update(1)
+        ctx.report_project_start(project_id)
+        # 判断当前 project_id 是否已存在于 content_embedding_collection 中
+        existing_embeddings = content_embedding_collection.count_documents({'project_id': project_id})
+
+        # 根据用户选项决定是否跳过或覆盖
+        if existing_embeddings > 0:
+            # 如果embedding数据库中存在当前项目，则根据用户选项决定是否跳过或覆盖
+            if skip_exist:
+                logging.info(f"project: {project_id} 已存在于 content_embedding_collection 中，跳过处理")
+                ctx.report_project_complete(project_id)
+                continue
+            else:
+                # 删除所有与当前 project_id 相关的文档
+                content_embedding_collection.delete_many({'project_id': project_id})
+                logging.info(f"project: {project_id} 已存在于 content_embedding_collection 中，删除现有数据并重新处理")
+                g.project_id_queue.append(project_id)
+                ctx.report_project_success(project_id)
+                continue
+        # 如果项目在embedding数据库中不存在，则继续处理
+        # 从content_collection中提取main_content
+        content_doc = content_collection.find_one({'_id': project_id})
+        if not content_doc:
+            # 项目在数据库中不存在，跳过处理
+            ctx.report_project_complete(project_id)
+            continue
+        if 'main_content' not in content_doc:
+            # 如果项目在数据库中没有main_content字段，则跳过处理并警告
+            logging.warning(f"project: {project_id} 没有main_content字段")
+            ctx.report_project_failed(project_id)
+            continue
+        # 如果embedding中不存在project 并且 content_collection中存在，则正常添加到队列
+        g.project_id_queue.append(project_id)
+        ctx.report_project_success(project_id)
+
+
+def calculate_text_embedding_using_multimodal_embedding_v1_api(ctx: WorkingContext,
+                                                               chunk_size=500,
+                                                               chunk_overlap=50,
+                                                               *args):
+    raise Exception("当前方案已弃用")
+    _total = len(g.project_id_queue)
+    assert _total > 0, "没有需要处理的项目"
+    ctx.set_total(_total)
+
     from langchain.text_splitter import RecursiveCharacterTextSplitter
-    from utils.embedding_utils import embed_text
+    from apis.multimodal_embedding_v1_api import embed_text
     if g.mongo_client is None:
         raise Exception("MongoDB连接失败")
     db = g.mongo_client[user_settings.mongodb_archdaily_db_name]
@@ -658,11 +786,6 @@ def calculate_text_embedding(ctx: WorkingContext,
         chunk_size=chunk_size,  # 每段最大长度
         chunk_overlap=chunk_overlap  # 段与段之间的重叠长度
     )
-
-    # 遍历每个项目
-    all_projects = os.listdir(user_settings.projects_dir)
-    ctx.set_total(len(all_projects))
-
     valid_api_keys = user_settings.api_keys.copy()
 
     def _handle_project(project_id: str, i: int):
@@ -670,36 +793,15 @@ def calculate_text_embedding(ctx: WorkingContext,
             return
         ctx.update(1)
         ctx.report_project_start(project_id)
-        # 判断当前 project_id 是否已存在于 content_embedding_collection 中
-        existing_embeddings = content_embedding_collection.count_documents({'project_id': project_id})
 
-        # 根据用户选项决定是否跳过或覆盖
-        if existing_embeddings > 0:
-            if skip_exist:
-                logging.info(f"project: {project_id} 已存在于 content_embedding_collection 中，跳过处理")
-                ctx.report_project_complete(project_id)
-                return
-            else:
-                # 删除所有与当前 project_id 相关的文档
-                content_embedding_collection.delete_many({'project_id': project_id})
-                logging.info(f"project: {project_id} 已存在于 content_embedding_collection 中，删除现有数据并重新处理")
-
-        # 从content_collection中提取main_content
         content_doc = content_collection.find_one({'_id': project_id})
-        if not content_doc:
-            # 项目在数据库中不存在，跳过处理
-            ctx.report_project_complete(project_id)
-            return
-        if 'main_content' not in content_doc:
-            logging.warning(f"project: {project_id} 没有main_content字段")
-            ctx.report_project_failed(project_id)
-            return
-
         main_content = content_doc['main_content']
+
         text_contents = [item['content'] for item in main_content if item['type'] == 'text']
         chunks: list[dict[str: any]] = []
         for text_idx, text in enumerate(text_contents):
-            chunks.extend([{'text_idx': text_idx, 'chunk_idx': chunk_idx, 'content': chunk} for chunk_idx, chunk in enumerate(text_splitter.split_text(text))])
+            chunks.extend([{'text_idx': text_idx, 'chunk_idx': chunk_idx, 'content': chunk} for chunk_idx, chunk in
+                           enumerate(text_splitter.split_text(text))])
 
         api_key = valid_api_keys.pop(0)  # 拿取api key
         query_chunks = chunks.copy()
@@ -741,6 +843,80 @@ def calculate_text_embedding(ctx: WorkingContext,
             logging.warning(f"project: {project_id} 有{len(query_chunks)}个chunk未能成功获取嵌入向量")
 
     with ThreadPoolExecutor(max_workers=len(user_settings.api_keys)) as executor:
-        futures = (executor.submit(_handle_project, project_id, i) for i, project_id in enumerate(all_projects))
+        futures = (executor.submit(_handle_project, project_id, i) for i, project_id in enumerate(g.project_id_queue))
         for future in as_completed(futures):
             future.result()
+
+
+def calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext,
+                                                       chunk_size=500,
+                                                       chunk_overlap=50,
+                                                       *args):
+    _total = len(g.project_id_queue)
+    assert _total > 0, "没有项目需要下载"
+    ctx.set_total(_total)
+
+    if g.mongo_client is None:
+        raise Exception("MongoDB连接失败")
+    db = g.mongo_client[user_settings.mongodb_archdaily_db_name]
+    content_collection = db['content_collection']
+    content_embedding_collection = db['content_embedding']
+
+    ctx.report_msg("正在加载模型...")
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    from apis.gme_Qwen2_vl_2B_api import get_text_embeddings
+
+    # 初始化文本分割器
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,  # 每段最大长度
+        chunk_overlap=chunk_overlap  # 段与段之间的重叠长度
+    )
+
+    def _handle_project(project_id: str, i: int):
+        if ctx.should_stop:
+            return
+        ctx.update(1)
+        ctx.report_project_start(project_id)
+        ctx.report_project_sub_total(project_id, " ")
+        ctx.report_project_sub_curr(project_id, "SPT")
+        # 此前scan时已经确保都是存在id和maincontent的，因此此处可以直接取用
+        content_doc = content_collection.find_one({'_id': project_id})
+        main_content = content_doc['main_content']
+
+        text_contents = [item['content'] for item in main_content if item['type'] == 'text']
+        chunks: list[dict[str: any]] = []
+        for text_idx, text in enumerate(text_contents):
+            chunks.extend([{'text_idx': text_idx, 'chunk_idx': chunk_idx, 'content': chunk} for chunk_idx, chunk in
+                           enumerate(text_splitter.split_text(text))])
+
+        ctx.report_project_sub_total(project_id, len(chunks))
+        input_texts = [chunk['content'] for chunk in chunks]
+
+        ctx.report_project_sub_curr(project_id, "EBD")
+        embedding_vectors = get_text_embeddings(input_texts, show_progress_bar=False)
+
+        for i, chunk_data in enumerate(chunks):
+            ctx.report_project_sub_curr(project_id, f"WDB:{i}")
+            text_idx = chunk_data['text_idx']
+            chunk_idx = chunk_data['chunk_idx']
+            content = chunk_data['content']
+            embedding_vector = embedding_vectors[i].tolist()
+
+            embedding_doc = {
+                'project_id': project_id,
+                'embedding': embedding_vector,
+                'text_content': content,
+                'text_idx': text_idx,
+                'chunk_idx': chunk_idx
+            }
+            result = content_embedding_collection.insert_one(embedding_doc)
+        ctx.report_project_success(project_id)
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = (executor.submit(_handle_project, project_id, i) for i, project_id in enumerate(g.project_id_queue))
+        for future in tqdm(as_completed(futures), total=len(g.project_id_queue)):
+            future.result()
+    import torch
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+# endregion
