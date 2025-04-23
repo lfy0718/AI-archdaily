@@ -1,13 +1,9 @@
-import logging
-import os
-import json
-
+from pymongo import MongoClient
 from tqdm import tqdm
 
 from config import *
-from pymongo import MongoClient
-from bson.objectid import ObjectId
 from utils.logging_utils import init_logger
+
 init_logger("step9")
 
 skip_exist = False
@@ -15,11 +11,11 @@ skip_exist = False
 # 连接到MongoDB
 client = MongoClient(user_settings.mongodb_host)
 logging.info(f"connected to {user_settings.mongodb_host}")
-db = client[user_settings.mongodb_db_name]
+db = client[user_settings.mongodb_archdaily_db_name]
 
 content_collection = db['content_collection']
 
-all_projects = os.listdir(user_settings.archdaily_projects_dir)[:100] # 取前100个做实验
+all_projects = os.listdir(user_settings.archdaily_projects_dir)[:100]  # 取前100个做实验
 
 # 遍历每个项目文件夹
 for project_id in tqdm(all_projects):

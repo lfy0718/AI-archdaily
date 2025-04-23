@@ -1,7 +1,6 @@
 import numpy as np
-from pymongo import MongoClient
-from pymongo import MongoClient
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from pymongo import MongoClient
 from tqdm import tqdm
 
 from config import *
@@ -13,7 +12,7 @@ skip_exist = True
 # 连接到MongoDB
 client = MongoClient(user_settings.mongodb_host)
 logging.info(f"connected to {user_settings.mongodb_host}")
-db = client[user_settings.mongodb_db_name]
+db = client[user_settings.mongodb_archdaily_db_name]
 content_collection = db['content_collection']
 content_embedding_collection = db['content_embedding']
 
