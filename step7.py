@@ -4,6 +4,8 @@ import logging
 import os
 from datetime import datetime
 
+import config
+from config import *
 import pandas as pd
 
 # 配置日志
@@ -30,7 +32,7 @@ logger.setLevel(logging.INFO)
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
 
-projects_dir = 'results/projects'
+projects_dir = config.user_settings.archdaily_projects_dir
 output_dir = 'results/database'
 image_size_type = 'large'  # 可选项：large, slideshow, medium
 database_name = "image_database"

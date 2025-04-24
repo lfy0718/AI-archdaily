@@ -305,24 +305,16 @@ def fetch_image(image: str | Image.Image, size_factor: int = IMAGE_FACTOR) -> Im
 device = "cuda" if torch.cuda.is_available() else "cpu"
 cache_dir = os.path.join(os.path.dirname(__file__), "checkpoints/Qwen")
 logging.info(f"Loading Model Alibaba-NLP/gme-Qwen2-VL-2B-Instruct from {cache_dir}")
-import streamlit as st
+gme = GmeQwen2VL("Alibaba-NLP/gme-Qwen2-VL-2B-Instruct", cache_dir=cache_dir, device=device)
 
 
-@st.cache_resource
-def get_model():
-    return GmeQwen2VL("Alibaba-NLP/gme-Qwen2-VL-2B-Instruct", cache_dir=cache_dir, device=device)
-
-
-gme = get_model()
-
-
-def get_text_embeddings(texts: list[str], batch_size=32, num_workers=0, show_progress_bar=True) -> np.ndarray:
+def get_text_embeddings(texts: list[str], batch_size=32, num_workers=0, show_progress_bar=False) -> np.ndarray:
     e_text = gme.get_text_embeddings(texts=texts, batch_size=batch_size, num_workers=num_workers,
                                      show_progress_bar=show_progress_bar)
     return e_text.detach().cpu().numpy()
 
 
-def get_image_embeddings(image_paths: list[str], batch_size=1, num_workers=0, show_progress_bar=True) -> np.ndarray:
+def get_image_embeddings(image_paths: list[str], batch_size=1, num_workers=0, show_progress_bar=False) -> np.ndarray:
     e_image = gme.get_image_embeddings(images=image_paths, batch_size=batch_size, num_workers=num_workers,
                                        show_progress_bar=show_progress_bar)
     return e_image.detach().cpu().numpy()
@@ -345,8 +337,16 @@ if __name__ == '__main__':
     for i in range(2):
         print(f"============================= text epoch {i}=========================")
         e_text = gme.get_text_embeddings(texts=texts, batch_size=64, num_workers=0, show_progress_bar=True)
+        # 检查是否有nan
+        if torch.isnan(e_text).any():
+            print("nan found in tensor")
+            break
         print(e_text.device)
-        print(e_text.detach().cpu().numpy().shape)
+        np_arr = e_text.detach().cpu().numpy()
+        if np.isnan(np_arr).any():
+            print("nan found in numpy arr")
+            break
+        print(np_arr.shape)
     print("===========================================================================")
     for i in range(2):
         print(f"============================= image epoch {i}=========================")

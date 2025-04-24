@@ -6,13 +6,16 @@ import atexit
 import json
 import logging
 import os
+import random
 import threading
 import time
 import traceback
 import warnings
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Optional, Any
 
+import numpy as np
 import requests
 import streamlit as st
 from tqdm import tqdm
@@ -965,13 +968,17 @@ def common__scan_embedding_db(ctx: WorkingContext, db_name, projects_dir, skip_e
         ctx.update(1)
         ctx.report_project_start(project_id)
         # 判断当前 project_id 是否已存在于 content_embedding_collection 中
-        existing_embeddings = content_embedding_collection.count_documents({'project_id': project_id})
-
+        existing = content_embedding_collection.find_one(
+            {"project_id": project_id},
+            {"_id": 1},  # 只返回_id字段
+            limit=1
+        )
+        existing_embeddings = existing is not None
         # 根据用户选项决定是否跳过或覆盖
-        if existing_embeddings > 0:
+        if existing_embeddings:
             # 如果embedding数据库中存在当前项目，则根据用户选项决定是否跳过或覆盖
             if skip_exist:
-                logging.info(f"project: {project_id} 已存在于 content_embedding_collection 中，跳过处理")
+                # logging.info(f"project: {project_id} 已存在于 content_embedding_collection 中，跳过处理")
                 ctx.report_project_complete(project_id)
                 continue
             else:
@@ -1109,52 +1116,141 @@ def common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingConte
         chunk_size=chunk_size,  # 每段最大长度
         chunk_overlap=chunk_overlap  # 段与段之间的重叠长度
     )
+    project_id_queue = deque(g.project_id_queue)
+    _doc_buffer_queue = deque()
+    _embedding_complete = False
 
-    def _handle_project(project_id: str, i: int):
-        if ctx.should_stop:
-            return
-        ctx.update(1)
-        ctx.report_project_start(project_id)
-        ctx.report_project_sub_total(project_id, " ")
-        ctx.report_project_sub_curr(project_id, "SPT")
-        # 此前scan时已经确保都是存在id和maincontent的，因此此处可以直接取用
-        content_doc = content_collection.find_one({'_id': project_id})
-        main_content = content_doc['main_content']
+    def _embedding_thread():
+        while len(project_id_queue) > 0:
+            if ctx.should_stop:
+                project_id_queue.clear()
+                break
+            if len(_doc_buffer_queue) > 100:  # put up to 50 projects in queue
+                time.sleep(0.2)
+                continue
+            project_id = project_id_queue.popleft()
+            ctx.update(1)
+            ctx.report_project_start(project_id)
+            # 此前scan时已经确保都是存在id和maincontent的，因此此处可以直接取用
+            content_doc = content_collection.find_one({'_id': project_id})
+            main_content = content_doc['main_content']
+            text_contents = [item['content'] for item in main_content if item['type'] == 'text']
+            chunks: list[dict[str: any]] = []
+            for text_idx, text in enumerate(text_contents):
+                chunks.extend([{'text_idx': text_idx, 'chunk_idx': chunk_idx, 'content': chunk} for chunk_idx, chunk in
+                               enumerate(text_splitter.split_text(text))])
+            chunks = [chunk for chunk in chunks if chunk['content'].strip() != '']
+            if len(chunks) == 0:
+                ctx.report_project_failed(project_id)
+                logging.warning(f"project: {project_id} 没有文本内容")
+                continue
+            ctx.report_project_sub_total(project_id, len(chunks))
+            input_texts = [chunk['content'] for chunk in chunks]
 
-        text_contents = [item['content'] for item in main_content if item['type'] == 'text']
-        chunks: list[dict[str: any]] = []
-        for text_idx, text in enumerate(text_contents):
-            chunks.extend([{'text_idx': text_idx, 'chunk_idx': chunk_idx, 'content': chunk} for chunk_idx, chunk in
-                           enumerate(text_splitter.split_text(text))])
+            ctx.report_project_sub_curr(project_id, "EBD")
+            embedding_vectors = get_text_embeddings(input_texts, batch_size=min(len(input_texts), 32),
+                                                    show_progress_bar=False)
+            # 判断是否有NaN
+            if np.isnan(embedding_vectors).any():
+                ctx.report_project_failed(project_id)
+                logging.error(f"project: {project_id} 有NaN值 embedding_vectors")
+                continue
+            buffer = []
+            for i, chunk_data in enumerate(chunks):
+                text_idx = chunk_data['text_idx']
+                chunk_idx = chunk_data['chunk_idx']
+                content = chunk_data['content']
+                embedding_vector = embedding_vectors[i].tolist()
+                embedding_doc = {
+                    'project_id': project_id,
+                    'chunk_id': f'{project_id}-{text_idx}-{chunk_idx}',
+                    'embedding': embedding_vector,
+                    'text_content': content,
+                    'text_idx': text_idx,
+                    'chunk_idx': chunk_idx,
+                }
+                buffer.append(embedding_doc)
+            if len(buffer) == 0:
+                ctx.report_project_failed(project_id)
+                logging.warning(f"project: {project_id} 没有任何数据")
+                continue
+            _doc_buffer_queue.append(buffer)
+            ctx.report_project_sub_curr(project_id, "InQ")
+    def _upload_doc_thread():
+        time.sleep(random.random())
+        while True:
+            if len(_doc_buffer_queue) == 0:
+                if len(project_id_queue) > 0:
+                    time.sleep(0.2)  # 等待project_id_queue队列为空，再退出循环， 否则一直待命
+                    continue
+                else:
+                    break
+            try:
+                buffer = _doc_buffer_queue.popleft()
+            except Exception as e:
+                logging.warning(f"_upload_doc_thread error: {e}, this is not supposed to happen")
+                continue
+            project_id = buffer[0]['project_id']
+            ctx.report_project_sub_curr(project_id, f"WDB")
+            result = content_embedding_collection.insert_many(buffer)
+            ctx.report_project_success(project_id)
 
-        ctx.report_project_sub_total(project_id, len(chunks))
-        input_texts = [chunk['content'] for chunk in chunks]
 
-        ctx.report_project_sub_curr(project_id, "EBD")
-        embedding_vectors = get_text_embeddings(input_texts, show_progress_bar=False)
+    embedding_thread = threading.Thread(target=_embedding_thread)
+    embedding_thread.start()
+    upload_thread = threading.Thread(target=_upload_doc_thread)
+    upload_thread.start()
+    # 等待任务完成
+    embedding_thread.join()
+    upload_thread.join()
 
-        for i, chunk_data in enumerate(chunks):
-            ctx.report_project_sub_curr(project_id, f"WDB:{i}")
-            text_idx = chunk_data['text_idx']
-            chunk_idx = chunk_data['chunk_idx']
-            content = chunk_data['content']
-            embedding_vector = embedding_vectors[i].tolist()
-
-            embedding_doc = {
-                'project_id': project_id,
-                'embedding': embedding_vector,
-                'text_content': content,
-                'text_idx': text_idx,
-                'chunk_idx': chunk_idx
-            }
-            result = content_embedding_collection.insert_one(embedding_doc)
-        ctx.report_project_success(project_id)
-
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = (executor.submit(_handle_project, project_id, i) for i, project_id in enumerate(g.project_id_queue))
-        for future in tqdm(as_completed(futures), total=len(g.project_id_queue)):
-            future.result()
     import torch
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+
+def common__fix_nan_embeddings_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext, db_name):
+    if g.mongo_client is None:
+        raise Exception("MongoDB连接失败")
+    db = g.mongo_client[db_name]
+    content_embedding_collection = db['content_embedding']
+    logging.info("counting documents")
+    document_count = content_embedding_collection.count_documents({})
+    logging.info(f"document count = {document_count}")
+    cursor = content_embedding_collection.find({})
+    from apis.gme_Qwen2_vl_2B_api import get_text_embeddings
+    modified_count = 0
+    ctx.set_total(document_count)
+    for doc in tqdm(cursor, total=document_count):
+        if ctx.should_stop:
+            break
+        ctx.update(1)
+        assert 'project_id' in doc, "遇到严重错误：文档缺少project_id字段"
+        if "embedding" not in doc:
+            logging.error(f"one doc of project: {doc['project_id']} has not embedding")
+            continue
+        if 'text_content' not in doc:
+            logging.error(f"one doc of project: {doc['project_id']} has not text_content")
+            continue
+        embedding = doc["embedding"]
+        # 检查embedding是否为列表
+        if not isinstance(embedding, list):
+            logging.error(f"find one document:{doc['project_id']} has no list embedding")
+            continue
+
+        # 新增：检查embedding中是否存在NaN值
+        if np.isnan(np.array(embedding)).any():
+            ctx.report_project_start(doc['project_id'])
+            logging.info(f"find one document:{doc['project_id']} with NaN")
+            text_content = doc['text_content']
+            embedding_vectors = get_text_embeddings(text_content, batch_size=1,
+                                                    show_progress_bar=False)
+            new_embedding = embedding_vectors[0].tolist()
+            doc.update({"embedding": new_embedding})
+            content_embedding_collection.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"embedding": new_embedding}}
+            )
+            modified_count += 1
+            ctx.report_project_success(doc['project_id'])
+
 # endregion

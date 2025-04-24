@@ -1,8 +1,10 @@
 import gradio as gr
-import pandas as pd
 import numpy as np
+import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
+
 from apis import cn_clip_api
+from config import *
 
 
 # 读取image_database.pkl文件
@@ -59,8 +61,10 @@ def compute_text_features(text):
     print(feature_vector.shape)
     return feature_vector  # 
 
+
 # 匹配最相似的图像
-def find_similar_items(image_feature_vector, text_feature_vector, negative_text_feature_vector, df, image_weight, text_weight, negative_text_weight, top_k=10):
+def find_similar_items(image_feature_vector, text_feature_vector, negative_text_feature_vector, df, image_weight,
+                       text_weight, negative_text_weight, top_k=10):
     # 确保 feature_vectors 是二维数组
     if image_feature_vector is not None and image_feature_vector.ndim == 1:
         image_feature_vector = image_feature_vector.reshape(1, -1)
@@ -102,20 +106,21 @@ with gr.Blocks() as iface:
             image_input = gr.Image(label="上传图像", elem_id="image_input", height=400)
             text_input = gr.Textbox(label="输入文本")
             negative_text_input = gr.Textbox(label="输入负向提示文本")
-            
+
             # 添加卷展栏到左半部分
             with gr.Accordion("高级参数", open=False):
                 top_k_slider = gr.Slider(1, 50, value=10, step=1, label="Top K 数量")
                 image_weight_slider = gr.Slider(0, 1, value=0.8, step=0.1, label="图像权重")
                 text_weight_slider = gr.Slider(0, 1, value=0.3, step=0.1, label="正向提示文本权重")
                 negative_text_weight_slider = gr.Slider(0, 1, value=0.2, step=0.1, label="负向提示文本权重")
-            
+
             submit_button = gr.Button("匹配相似项目")
         with gr.Column():
             output_gallery = gr.Gallery(label="相似图像", columns=3, rows=2, object_fit="contain")
             go_button = gr.Button("打开选中的项目", interactive=False)
-    
+
     selected_id_state = gr.State(None)  # 使用State保存选中ID
+
 
     # Gallery选择事件处理
     def on_gallery_select(evt: gr.SelectData):  # 修改: 添加参数 evt
@@ -125,10 +130,13 @@ with gr.Blocks() as iface:
             print(selected_data['caption'])
             return selected_data['caption']
         return None
+
+
     output_gallery.select(
         on_gallery_select,
         outputs=[selected_id_state]
     )
+
 
     # 按钮点击事件处理
     def on_go_click(project_id):
@@ -137,6 +145,7 @@ with gr.Blocks() as iface:
             webbrowser.open(f"https://www.archdaily.com/{project_id}")
             return f"打开选中的项目 (https://www.archdaily.com/{project_id})"
         return "打开选中的项目"
+
 
     selected_id_state.change(
         fn=lambda pid: gr.update(interactive=bool(pid)),
@@ -149,6 +158,7 @@ with gr.Blocks() as iface:
         outputs=None
     )
 
+
     # 更新按钮标签的逻辑移到这里
     def update_go_button_label(pid):
         if pid:
@@ -156,11 +166,13 @@ with gr.Blocks() as iface:
         else:
             return gr.update(value="打开选中的项目")
 
+
     selected_id_state.change(
         fn=update_go_button_label,
         inputs=[selected_id_state],
         outputs=[go_button]
     )
+
 
     # 定义提交按钮
     def process_input(image, text, negative_text, top_k, image_weight, text_weight, negative_text_weight):
@@ -168,18 +180,27 @@ with gr.Blocks() as iface:
         text_feature_vector = compute_text_features(text) if text else None
         negative_text_feature_vector = compute_text_features(negative_text) if negative_text else None
 
-        similar_items = find_similar_items(image_feature_vector, text_feature_vector, negative_text_feature_vector, df, image_weight, text_weight, negative_text_weight, top_k=top_k)
+        similar_items = find_similar_items(image_feature_vector, text_feature_vector, negative_text_feature_vector, df,
+                                           image_weight, text_weight, negative_text_weight, top_k=top_k)
         # 处理空结果并返回图片路径和 project id 的列表
         result_list = []
         for _, row in similar_items.iterrows():
-            result_list.append((row['image_path'], row['project_id']))
+            image_path = row['image_path']
+            image_name = os.path.basename(image_path)
+            project_id = row['project_id']
+            image_path = os.path.join(user_settings.archdaily_projects_dir, project_id, "image_gallery/large",
+                                      image_name)
+            result_list.append((image_path, row['project_id']))
         return result_list
+
 
     submit_button.click(
         process_input,
-        inputs=[image_input, text_input, negative_text_input, top_k_slider, image_weight_slider, text_weight_slider, negative_text_weight_slider],
+        inputs=[image_input, text_input, negative_text_input, top_k_slider, image_weight_slider, text_weight_slider,
+                negative_text_weight_slider],
         outputs=output_gallery
     )
+
 
 # 修改Gallery格式化函数
 def format_gallery_output(result_list):

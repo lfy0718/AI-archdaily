@@ -33,7 +33,9 @@ def _step1_upload_content():
 
 def _step2_calculating_embedding():
     st.info("首先扫描需要计算嵌入向量的项目")
-    skip_exist = st.checkbox("跳过已存在的项目", key="DBStep2-calculate")
+    skip_exist = st.checkbox("跳过已存在的项目", key="DBStep2-calculate", value=True)
+    if not skip_exist:
+        st.warning("不勾选该选项，会清除已经存在embedding的项目数据，请谨慎选择")
     b.template_start_work_with_progress("扫描需要计算嵌入向量的项目", "DBStep2-scan",
                                         b.gooood__scan_embedding_db, skip_exist,
                                         st_show_detail_number=True, st_show_detail_project_id=True,

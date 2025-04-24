@@ -33,7 +33,9 @@ def _step1_upload_content():
 
 def _step2_calculating_embedding():
     st.info("首先扫描需要计算嵌入向量的项目")
-    skip_exist = st.checkbox("跳过已存在的项目", key="DBStep2-calculate")
+    skip_exist = st.checkbox("跳过已存在的项目", key="DBStep2-calculate", value=True)
+    if not skip_exist:
+        st.warning("不勾选该选项，会清除已经存在embedding的项目数据，请谨慎选择")
     b.template_start_work_with_progress("扫描需要计算嵌入向量的项目", "DBStep2-scan",
                                         b.archdaily__scan_embedding_db, skip_exist,
                                         st_show_detail_number=True, st_show_detail_project_id=True,
@@ -59,6 +61,11 @@ def _step2_calculating_embedding():
                                             b.archdaily__calculate_text_embedding_using_gme_Qwen2_VL_2B_api,
                                             st_show_detail_number=True, st_show_detail_project_id=True,
                                             st_button_icon="✨", ctx_enable_ctx_scope_check=True)
+        st.divider()
+        b.template_start_work_with_progress("修复嵌入向量中的nan", "DBStep2-fix",
+                                            b.common__fix_nan_embeddings_using_gme_Qwen2_VL_2B_api, user_settings.mongodb_archdaily_db_name,
+                                            st_show_detail_number=True, st_show_detail_project_id=True,
+                                            ctx_enable_ctx_scope_check=False)
     if _plan == "**方案1**":
         _plan1_region()
     elif _plan == "**方案2**":

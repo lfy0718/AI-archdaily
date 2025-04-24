@@ -1,4 +1,4 @@
-# Step5： 爬取项目的页面内容及Image Gallery信息，保存为content.json， 分为两个list， {'main_content': [], 'image_gallery': []}， 支持并发下载
+# 本程序将从已有的文件夹中，查找是否存在content.html文件，如果不存在，则爬取页面内容，并保存为content.html文件
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tqdm import tqdm
