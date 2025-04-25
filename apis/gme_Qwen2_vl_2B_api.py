@@ -4,6 +4,7 @@ import base64
 import logging
 import math
 import os
+import time
 from io import BytesIO
 from typing import Dict, List, Optional
 
@@ -34,6 +35,7 @@ class GmeQwen2VL:
         self.base = AutoModelForVision2Seq.from_pretrained(
             model_name, torch_dtype=torch.float16, **kwargs
         )
+        self.base.to(device)
         self.base.eval()
         self.normalize = True
         self.device = device
@@ -41,9 +43,11 @@ class GmeQwen2VL:
         max_pixels = max_image_tokens * 28 * 28
         self.max_length = max_length
         self.processor = AutoProcessor.from_pretrained(
-            model_name, min_pixels=min_pixels, max_pixels=max_pixels, **kwargs
+            model_name, min_pixels=min_pixels, max_pixels=max_pixels, use_fast=True, **kwargs
         )
-        self.processor.tokenizer.padding_side = 'right'
+        attn_implementation = kwargs.get('attn_implementation', None)
+        # 根据报错信息， 使用flash-attn时使用left padding_side
+        self.processor.tokenizer.padding_side = 'right' if attn_implementation != "flash_attention_2" else 'left'
         self.defualt_instruction = 'You are a helpful assistant.'
         self.sep = ' '
 
@@ -99,9 +103,10 @@ class GmeQwen2VL:
         return embeddings.contiguous()
 
     def embed(self, texts: list[str], images: list[Image.Image], is_query=True, instruction=None, **kwargs):
-        self.base.to(self.device)
+        # self.base.to(self.device)  # do it in __init__
         # Inputs must be batched
         input_texts, input_images = list(), list()
+        # start_time = time.time()
         for t, i in zip(texts, images):
             if not is_query or instruction is None:
                 instruction = self.defualt_instruction
@@ -116,7 +121,11 @@ class GmeQwen2VL:
                 input_str += t
             msg = f'<|im_start|>system\n{instruction}<|im_end|>\n<|im_start|>user\n{input_str}<|im_end|>\n<|im_start|>assistant\n<|endoftext|>'
             input_texts.append(msg)
+        # end_time = time.time()
+        # if len(images):
+        #     print(f"\n图像fetch耗时(per image)： {(end_time - start_time) * 1000 / len(images)}ms")
 
+        # start_time = time.time()
         inputs = self.processor(
             text=input_texts,
             images=input_images,
@@ -125,9 +134,21 @@ class GmeQwen2VL:
             max_length=self.max_length,
             return_tensors='pt'
         )
+        # end_time = time.time()
+        # if len(images):
+        #     print(f"数据预处理耗时: {(end_time - start_time) * 1000 / len(images)}ms")
+
+        # start_time = time.time()
         inputs = {k: v.to(self.device) for k, v in inputs.items()}  # TODO
+        # end_time = time.time()
+        # if len(images):
+        #     print(f"数据传输耗时: {(end_time - start_time) *1000/len(images)}ms")
         with torch.no_grad():
+            # start_time = time.time()
             embeddings = self.forward(**inputs)
+            # end_time = time.time()
+            # if len(images):
+            #     print(f"embedding计算耗时: {(end_time - start_time) * 1000 / len(images)}ms")
         return embeddings
 
     def encode(self, sentences: list[str], *, prompt_name=None, **kwargs):
@@ -187,12 +208,14 @@ class GmeQwen2VL:
         all_embeddings = list()
         none_batch = [None] * batch_size
         show_progress_bar = kwargs.pop('show_progress_bar', True)
-        pbar = tqdm(total=n_batch * batch_size, disable=not show_progress_bar, desc='encode')
+        num_text = len(texts) if texts is not None else 0
+        num_images = len(images) if images is not None else 0
+        pbar = tqdm(total=num_text + num_images, disable=not show_progress_bar, desc='encode')
         for n, img_batch in zip(range(0, n_batch * batch_size, batch_size), image_loader):
             text_batch = none_batch if texts is None else texts[n: n + batch_size]
             img_batch = none_batch if img_batch is None else img_batch
             embeddings = self.embed(texts=text_batch, images=img_batch, **kwargs)
-            pbar.update(batch_size)
+            pbar.update(len(text_batch) if texts is not None else len(img_batch))
             all_embeddings.append(embeddings.cpu())
         pbar.close()
         all_embeddings = torch.cat(all_embeddings, dim=0)
@@ -258,7 +281,6 @@ def smart_resize(
 
 
 def fetch_image(image: str | Image.Image, size_factor: int = IMAGE_FACTOR) -> Image.Image:
-    # start_time = time.time_ns()
     image_obj = None
     if isinstance(image, Image.Image):
         image_obj = image
@@ -295,8 +317,6 @@ def fetch_image(image: str | Image.Image, size_factor: int = IMAGE_FACTOR) -> Im
         max_pixels=MAX_PIXELS,
     )
     image = image.resize((resized_width, resized_height))
-    # end_time = time.time_ns()
-    # print(f"Image {image} resized {(end_time - start_time) / 1e6}ms")
     return image
 
 
@@ -305,8 +325,11 @@ def fetch_image(image: str | Image.Image, size_factor: int = IMAGE_FACTOR) -> Im
 device = "cuda" if torch.cuda.is_available() else "cpu"
 cache_dir = os.path.join(os.path.dirname(__file__), "checkpoints/Qwen")
 logging.info(f"Loading Model Alibaba-NLP/gme-Qwen2-VL-2B-Instruct from {cache_dir}")
-gme = GmeQwen2VL("Alibaba-NLP/gme-Qwen2-VL-2B-Instruct", cache_dir=cache_dir, device=device)
-
+gme = GmeQwen2VL("Alibaba-NLP/gme-Qwen2-VL-2B-Instruct",
+                 cache_dir=cache_dir,
+                 device=device,
+                 attn_implementation="flash_attention_2",
+                 )
 
 def get_text_embeddings(texts: list[str], batch_size=32, num_workers=0, show_progress_bar=False) -> np.ndarray:
     e_text = gme.get_text_embeddings(texts=texts, batch_size=batch_size, num_workers=num_workers,
@@ -314,44 +337,55 @@ def get_text_embeddings(texts: list[str], batch_size=32, num_workers=0, show_pro
     return e_text.detach().cpu().numpy()
 
 
-def get_image_embeddings(image_paths: list[str], batch_size=1, num_workers=0, show_progress_bar=False) -> np.ndarray:
-    e_image = gme.get_image_embeddings(images=image_paths, batch_size=batch_size, num_workers=num_workers,
+def get_image_embeddings(images: list[str] | list[Image.Image], batch_size=32, num_workers=0, show_progress_bar=False) -> np.ndarray:
+    e_image = gme.get_image_embeddings(images=images, batch_size=batch_size, num_workers=num_workers,
                                        show_progress_bar=show_progress_bar)
     return e_image.detach().cpu().numpy()
 
 
-if __name__ == '__main__':
-    import torch
-
-    texts = [f"Tt`s a monkey.{i}" for i in range(1000)]
-
-    images = os.listdir("./examples")
-    images = [os.path.join("./examples", image) for image in images]
-    dup_images = []
-    for _ in range(10):
-        dup_images.extend(images)
-    images = dup_images
-    print("num texts:", len(texts))
-    print("num images:", len(images))
-
-    for i in range(2):
-        print(f"============================= text epoch {i}=========================")
-        e_text = gme.get_text_embeddings(texts=texts, batch_size=64, num_workers=0, show_progress_bar=True)
-        # 检查是否有nan
-        if torch.isnan(e_text).any():
-            print("nan found in tensor")
-            break
-        print(e_text.device)
+def test_texts(text: str, num_texts: int, num_epochs: int, text_batch_size: int, ):
+    print(f"testing texts with text_batch_size: {text_batch_size}, num_texts: {num_texts}, num_epochs: {num_epochs}")
+    assert len(text) > 0 and num_texts > 0 and text_batch_size > 0 and num_epochs > 0
+    texts = [f"{text}{i}" for i in range(num_texts)]
+    start_time = time.time()
+    for i in range(num_epochs):
+        e_text = gme.get_text_embeddings(texts=texts, batch_size=text_batch_size, num_workers=0, show_progress_bar=True)
         np_arr = e_text.detach().cpu().numpy()
         if np.isnan(np_arr).any():
-            print("nan found in numpy arr")
+            print("error: nan found in numpy arr")
             break
-        print(np_arr.shape)
-    print("===========================================================================")
-    for i in range(2):
-        print(f"============================= image epoch {i}=========================")
-        e_image = gme.get_image_embeddings(images=images, batch_size=1, num_workers=0, show_progress_bar=True)
-        print(e_image.device)
-        print(e_image.detach().cpu().numpy().shape)
-    print("============================= result =========================")
-    # print((e_text * e_image).sum(-1))
+    end_time = time.time()
+    total_time = end_time - start_time
+    print("".ljust(100, "="))
+    print(f"texts total time: {total_time}s")
+    print(f"text time per epoch: {total_time / num_epochs}")
+    print(f"text time per text: {total_time / num_epochs / num_texts * 1000} ms")
+    print("".ljust(100, "="))
+
+
+def test_image(image: str | Image.Image, num_images: int, num_epochs: int, image_batch_size: int, image_num_workers=0):
+    print(
+        f"testing images with image_batch_size: {image_batch_size}, num_images: {num_images}, num_epochs: {num_epochs}")
+    assert num_images > 0 and image_batch_size > 0 and num_epochs > 0
+    if isinstance(image, str):
+        image = Image.open(image)
+    images = [image] * num_images
+    start_time = time.time()
+    for i in range(num_epochs):
+        e_image = gme.get_image_embeddings(images=images, batch_size=image_batch_size, num_workers=image_num_workers, show_progress_bar=True)
+        np_arr = e_image.detach().cpu().numpy()
+        if np.isnan(np_arr).any():
+            print("error: nan found in numpy arr")
+            break
+    end_time = time.time()
+    total_time = end_time - start_time
+    print("".ljust(100, "="))
+    print(f"images total time: {total_time}s")
+    print(f"image time per epoch: {total_time / num_epochs}")
+    print(f"image time per image: {total_time / num_epochs / num_images * 1000} ms")
+    print("".ljust(100, "="))
+
+
+if __name__ == '__main__':
+    # test_texts('Hello World', 1000, 5, 64)
+    test_image('./examples/image1.jpg', num_images=128, num_epochs=2, image_batch_size=32, image_num_workers=0)

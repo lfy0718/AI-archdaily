@@ -11,13 +11,16 @@ import threading
 import time
 import traceback
 import warnings
+from abc import abstractmethod
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Optional, Any
 
+import cv2
 import numpy as np
 import requests
 import streamlit as st
+from PIL import Image
 from tqdm import tqdm
 
 from utils import db_utils
@@ -316,7 +319,8 @@ def template_flags(flag_type):
         ss_name = f"{flag_type}_{flag_name}"
         if ss_name not in st.session_state:
             st.session_state[ss_name] = g.flag_states[flag_type][flag_name]
-        st.checkbox(flag_name, value=st.session_state[ss_name], key=f'key_{flag_type}_{flag_name}', on_change=make_on_change(flag_name))
+        st.checkbox(flag_name, value=st.session_state[ss_name], key=f'key_{flag_type}_{flag_name}',
+                    on_change=make_on_change(flag_name))
 
 
 def template_project_id_queue_info_box(name: str, ctx_name: str):
@@ -629,27 +633,8 @@ def archdaily__download_gallery_images(ctx: WorkingContext, *args):
 
 
 def archdaily__upload_content(ctx: WorkingContext, skip_exist: bool = True, *args):
-    return common__upload_content(ctx, user_settings.mongodb_archdaily_db_name, user_settings.archdaily_projects_dir, skip_exist, *args)
-
-
-def archdaily__scan_embedding_db(ctx: WorkingContext, skip_exist: bool = True, *args):
-    return common__scan_embedding_db(ctx, user_settings.mongodb_archdaily_db_name, user_settings.archdaily_projects_dir, skip_exist, *args)
-
-
-def archdaily__calculate_text_embedding_using_multimodal_embedding_v1_api(ctx: WorkingContext,
-                                                                          chunk_size=500,
-                                                                          chunk_overlap=50,
-                                                                          *args):
-    return common__calculate_text_embedding_using_multimodal_embedding_v1_api(ctx, user_settings.mongodb_archdaily_db_name,
-                                                                              chunk_size, chunk_overlap, *args)
-
-
-def archdaily__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext,
-                                                                  chunk_size=500,
-                                                                  chunk_overlap=50,
-                                                                  *args):
-    return common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx, user_settings.mongodb_archdaily_db_name,
-                                                                      chunk_size, chunk_overlap, *args)
+    return common__upload_content(ctx, user_settings.mongodb_archdaily_db_name, user_settings.archdaily_projects_dir,
+                                  skip_exist, *args)
 
 
 # endregion
@@ -789,29 +774,11 @@ def gooood__download_gallery_images(ctx: WorkingContext, *args):
     return common__download_gallery_images(ctx, user_settings.gooood_projects_dir, *args)
 
 
-
 def gooood__upload_content(ctx: WorkingContext, skip_exist: bool = True, *args):
-    return common__upload_content(ctx, user_settings.mongodb_gooood_db_name, user_settings.gooood_projects_dir, skip_exist, *args)
+    return common__upload_content(ctx, user_settings.mongodb_gooood_db_name, user_settings.gooood_projects_dir,
+                                  skip_exist, *args)
 
 
-def gooood__scan_embedding_db(ctx: WorkingContext, skip_exist: bool = True, *args):
-    return common__scan_embedding_db(ctx, user_settings.mongodb_gooood_db_name, user_settings.gooood_projects_dir, skip_exist, *args)
-
-
-def gooood__calculate_text_embedding_using_multimodal_embedding_v1_api(ctx: WorkingContext,
-                                                                          chunk_size=500,
-                                                                          chunk_overlap=50,
-                                                                          *args):
-    return common__calculate_text_embedding_using_multimodal_embedding_v1_api(ctx, user_settings.mongodb_gooood_db_name,
-                                                                              chunk_size, chunk_overlap, *args)
-
-
-def gooood__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext,
-                                                                  chunk_size=500,
-                                                                  chunk_overlap=50,
-                                                                  *args):
-    return common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx, user_settings.mongodb_gooood_db_name,
-                                                                      chunk_size, chunk_overlap, *args)
 # endregion
 
 
@@ -951,12 +918,13 @@ def common__upload_content(ctx: WorkingContext, db_name, projects_dir, skip_exis
     logging.info('complete')
 
 
-def common__scan_embedding_db(ctx: WorkingContext, db_name, projects_dir, skip_exist: bool = True, *args):
+def common__scan_embedding_db(ctx: WorkingContext, db_name, embedding_collection_name, projects_dir,
+                              skip_exist: bool = True, delete_exist: bool = False, *args):
     if g.mongo_client is None:
         raise Exception("MongoDB连接失败")
     db = g.mongo_client[db_name]
     content_collection = db['content_collection']
-    content_embedding_collection = db['content_embedding']
+    content_embedding_collection = db[embedding_collection_name]
 
     # 遍历每个项目
     all_projects = os.listdir(projects_dir)
@@ -982,12 +950,19 @@ def common__scan_embedding_db(ctx: WorkingContext, db_name, projects_dir, skip_e
                 ctx.report_project_complete(project_id)
                 continue
             else:
-                # 删除所有与当前 project_id 相关的文档
-                content_embedding_collection.delete_many({'project_id': project_id})
-                logging.info(f"project: {project_id} 已存在于 content_embedding_collection 中，删除现有数据并重新处理")
-                g.project_id_queue.append(project_id)
-                ctx.report_project_success(project_id)
-                continue
+                if delete_exist:
+                    # 删除所有与当前 project_id 相关的文档
+                    content_embedding_collection.delete_many({'project_id': project_id})
+                    logging.info(
+                        f"project: {project_id} 已存在于 content_embedding_collection 中，删除现有数据并重新处理")
+                    g.project_id_queue.append(project_id)
+                    ctx.report_project_success(project_id)
+                    continue
+                else:
+                    # 直接添加，可能会造成重复
+                    g.project_id_queue.append(project_id)
+                    ctx.report_project_success(project_id)
+                    continue
         # 如果项目在embedding数据库中不存在，则继续处理
         # 从content_collection中提取main_content
         content_doc = content_collection.find_one({'_id': project_id})
@@ -1006,6 +981,7 @@ def common__scan_embedding_db(ctx: WorkingContext, db_name, projects_dir, skip_e
 
 
 def common__calculate_text_embedding_using_multimodal_embedding_v1_api(ctx: WorkingContext, db_name,
+                                                                       embedding_collection_name,
                                                                        chunk_size=500,
                                                                        chunk_overlap=50,
                                                                        *args):
@@ -1024,7 +1000,7 @@ def common__calculate_text_embedding_using_multimodal_embedding_v1_api(ctx: Work
         raise Exception("MongoDB连接失败")
     db = g.mongo_client[db_name]
     content_collection = db['content_collection']
-    content_embedding_collection = db['content_embedding']
+    content_embedding_collection = db[embedding_collection_name]
 
     # 初始化文本分割器
     text_splitter = RecursiveCharacterTextSplitter(
@@ -1066,14 +1042,14 @@ def common__calculate_text_embedding_using_multimodal_embedding_v1_api(ctx: Work
                     query_chunks.append(chunk_data)
                 else:
                     # 插入到content_embedding集合
-                    embedding_doc = {
+                    doc = {
                         'project_id': project_id,
                         'embedding': embedding_vector,
                         'text_content': content,
                         'text_idx': text_idx,
                         'chunk_idx': chunk_idx
                     }
-                    result = content_embedding_collection.insert_one(embedding_doc)
+                    result = content_embedding_collection.insert_one(doc)
                     sub_curr += 1
                     ctx.report_project_sub_curr(project_id, sub_curr)
             if not query_chunks:
@@ -1093,7 +1069,7 @@ def common__calculate_text_embedding_using_multimodal_embedding_v1_api(ctx: Work
             future.result()
 
 
-def common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext, db_name,
+def common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext, db_name, embedding_collection_name,
                                                                chunk_size=500,
                                                                chunk_overlap=50,
                                                                *args):
@@ -1105,7 +1081,7 @@ def common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingConte
         raise Exception("MongoDB连接失败")
     db = g.mongo_client[db_name]
     content_collection = db['content_collection']
-    content_embedding_collection = db['content_embedding']
+    content_embedding_collection = db[embedding_collection_name]
 
     ctx.report_msg("正在加载模型...")
     from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -1118,7 +1094,6 @@ def common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingConte
     )
     project_id_queue = deque(g.project_id_queue)
     _doc_buffer_queue = deque()
-    _embedding_complete = False
 
     def _embedding_thread():
         while len(project_id_queue) > 0:
@@ -1163,7 +1138,6 @@ def common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingConte
                 embedding_vector = embedding_vectors[i].tolist()
                 embedding_doc = {
                     'project_id': project_id,
-                    'chunk_id': f'{project_id}-{text_idx}-{chunk_idx}',
                     'embedding': embedding_vector,
                     'text_content': content,
                     'text_idx': text_idx,
@@ -1176,6 +1150,7 @@ def common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingConte
                 continue
             _doc_buffer_queue.append(buffer)
             ctx.report_project_sub_curr(project_id, "InQ")
+
     def _upload_doc_thread():
         time.sleep(random.random())
         while True:
@@ -1188,13 +1163,12 @@ def common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingConte
             try:
                 buffer = _doc_buffer_queue.popleft()
             except Exception as e:
-                logging.warning(f"_upload_doc_thread error: {e}, this is not supposed to happen")
+                logging.error(f"_upload_doc_thread error: {e}, this is not supposed to happen")
                 continue
             project_id = buffer[0]['project_id']
             ctx.report_project_sub_curr(project_id, f"WDB")
             result = content_embedding_collection.insert_many(buffer)
             ctx.report_project_success(project_id)
-
 
     embedding_thread = threading.Thread(target=_embedding_thread)
     embedding_thread.start()
@@ -1208,7 +1182,230 @@ def common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingConte
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
+
+class EmbeddingImageProcessor:
+    def __init__(self, name):
+        self.name = name
+
+    @abstractmethod
+    def apply(self, image: Image.Image) -> Image.Image | list[Image.Image]:
+        pass
+
+
+class DefaultImageProcessor(EmbeddingImageProcessor):
+    def __init__(self, name, resolution: int = 512):
+        super().__init__(name)
+        self.resolution = resolution
+
+    def apply(self, image: Image.Image):
+        image.thumbnail((self.resolution, self.resolution))
+        return image
+
+
+class CannyImageProcessor(EmbeddingImageProcessor):
+    def __init__(self, name, resolution: int = 512):
+        super().__init__(name)
+        self.resolution = resolution
+
+    def apply(self, image: Image.Image):
+        image.thumbnail((self.resolution, self.resolution))
+        image = image.convert("RGB")
+        image = np.array(image)
+        image = cv2.Canny(image, 100, 200)
+        image = image[:, :, None]
+        image = np.concatenate([image, image, image], axis=2)
+        image = Image.fromarray(image)
+        return image
+
+
+@st.cache_resource
+def get_image_processors(processor_type):
+    if processor_type == "default":
+        return [
+            DefaultImageProcessor("default_512", 512),
+            DefaultImageProcessor("default_1024", 1024)
+        ]
+    if processor_type == "canny":
+        return [
+            CannyImageProcessor("canny_512", 512),
+            CannyImageProcessor("canny_1024", 1024)
+        ]
+    return []
+
+
+def common__calculate_image_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext,
+                                                                db_name,
+                                                                collection_name,
+                                                                projects_dir,  # 存放项目的文件夹路径
+                                                                img_dir='image_gallery/large',  # 对于每个project的图像文件夹路径
+                                                                img_processor_type: str = "default",
+                                                                img_processor_name: str = "default_512"):
+    _total = len(g.project_id_queue)
+    assert _total > 0, "没有项目需要下载"
+    ctx.set_total(_total)
+
+    if g.mongo_client is None:
+        raise Exception("MongoDB连接失败")
+    db = g.mongo_client[db_name]
+    content_embedding_collection = db[collection_name]
+
+    ctx.report_msg("正在加载模型...")
+    from apis.gme_Qwen2_vl_2B_api import get_image_embeddings
+    ctx.report_msg("模型加载完毕")
+    project_id_queue = deque(g.project_id_queue)
+
+    img_processors = get_image_processors(img_processor_type)
+    img_processor = None
+    for p in img_processors:
+        if p.name == img_processor_name:
+            img_processor = p
+            break
+    if img_processor is None:
+        raise Exception(f"Image Processor {img_processor_name} not found")
+
+    ctx.report_msg(f"使用Image Processor: {img_processor.name} ")
+
+    _img_chunks_queue = deque()
+    _doc_buffer_queue = deque()
+
+    def _img_processing_thread():
+        while len(project_id_queue) > 0:
+            if ctx.should_stop:
+                project_id_queue.clear()
+                break
+            if len(_img_chunks_queue) > 20:  # put up to 20 projects in queue
+                time.sleep(0.2)
+                continue
+
+            try:
+                project_id = project_id_queue.popleft()
+            except Exception as e:
+                logging.error(f"_img_processing_thread error: {e}, this is not supposed to happen")
+                continue
+            ctx.update(1)
+            ctx.report_project_start(project_id)
+
+            image_folder = os.path.join(projects_dir, project_id, img_dir)
+            if not os.path.isdir(image_folder):
+                ctx.report_project_failed(project_id)
+                logging.warning(f"project: {project_id} 没有图像内容")
+                continue
+            image_names: list[str] = os.listdir(image_folder)
+            image_paths = [os.path.join(image_folder, image_name) for image_name in image_names]
+            image_idxes = [int(image_name.split('.')[0]) for image_name in image_names]
+            ctx.report_project_sub_curr(project_id, "PCS")
+            ctx.report_project_sub_total(project_id, len(image_paths))
+
+            chunks: list[dict[str: any]] = []
+            # 可以像文本分割一样，对image也进行切割
+            for i, img_path in enumerate(image_paths):
+                ctx.report_project_sub_curr(project_id, f"PCS[{i}]")
+                img = Image.open(img_path)
+                imgs = img_processor.apply(img)
+                if not isinstance(imgs, list):
+                    imgs = [imgs]
+                assert isinstance(imgs, list)
+                for chunk_idx, img in enumerate(imgs):
+                    chunks.append(
+                        {
+                            'project_id': project_id,
+                            'image': img,
+                            'image_idx': image_idxes[i],
+                            'chunk_idx': chunk_idx,
+                        }
+                    )
+            if len(chunks) == 0:
+                ctx.report_project_failed(project_id)
+                logging.warning(f"project: {project_id} 没有图像内容")
+                continue
+
+            ctx.report_project_sub_curr(project_id, "PCS[OK]")
+            _img_chunks_queue.append(chunks)  # add to queue
+
+    def _embedding_thread():
+        while True:
+            if len(_img_chunks_queue) == 0:
+                if len(project_id_queue) > 0:
+                    time.sleep(0.2)  # 等待project_id_queue队列为空，再退出循环， 否则一直待命
+                    continue
+                else:
+                    break
+            try:
+                chunks = _img_chunks_queue.popleft()
+            except Exception as e:
+                logging.error(f"_embedding_thread error: {e}, this is not supposed to happen")
+                continue
+            project_id = chunks[0]['project_id']
+            ctx.report_project_sub_curr(project_id, f"EBD")
+            ctx.report_project_sub_total(project_id, len(chunks))
+            input_images = [chunk['image'] for chunk in chunks]
+            embedding_vectors = get_image_embeddings(
+                input_images,
+                batch_size=min(len(input_images), 32),
+                show_progress_bar=True
+            )
+            # 判断是否有NaN
+            if np.isnan(embedding_vectors).any():
+                ctx.report_project_failed(project_id)
+                logging.error(f"project: {project_id} 有NaN值 embedding_vectors")
+                continue
+            buffer = []
+            for i, chunk_data in enumerate(chunks):
+                project_id = chunk_data['project_id']
+                image_idx = chunk_data['image_idx']
+                chunk_idx = chunk_data['chunk_idx']
+                embedding_vector = embedding_vectors[i].tolist()
+                doc = {
+                    'project_id': project_id,
+                    'embedding': embedding_vector,
+                    'image_idx': image_idx,
+                    'chunk_idx': chunk_idx,
+                }
+                buffer.append(doc)
+            _doc_buffer_queue.append(buffer)
+            ctx.report_project_sub_curr(project_id, "EBD[OK]")
+
+    def _upload_doc_thread():
+        time.sleep(random.random())
+        while True:
+            if len(_doc_buffer_queue) == 0:
+                if len(project_id_queue) > 0:
+                    time.sleep(0.2)  # 等待project_id_queue队列为空，再退出循环， 否则一直待命
+                    continue
+                else:
+                    break
+            try:
+                buffer = _doc_buffer_queue.popleft()
+            except Exception as e:
+                logging.error(f"_upload_doc_thread error: {e}, this is not supposed to happen")
+                continue
+            project_id = buffer[0]['project_id']
+            ctx.report_project_sub_curr(project_id, f"WDB")
+            result = content_embedding_collection.insert_many(buffer)
+            ctx.report_project_success(project_id)
+
+    process_thread1 = threading.Thread(target=_img_processing_thread)
+    process_thread1.start()
+    process_thread2 = threading.Thread(target=_img_processing_thread)
+    process_thread2.start()
+    embedding_thread = threading.Thread(target=_embedding_thread)
+    embedding_thread.start()
+    upload_thread = threading.Thread(target=_upload_doc_thread)
+    upload_thread.start()
+
+    # 等待任务完成
+    process_thread1.join()
+    process_thread2.join()
+    embedding_thread.join()
+    upload_thread.join()
+
+    import torch
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def common__fix_nan_embeddings_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext, db_name):
+    warnings.warn("common__fix_nan_embeddings_using_gme_Qwen2_VL_2B_api is deprecated")
     if g.mongo_client is None:
         raise Exception("MongoDB连接失败")
     db = g.mongo_client[db_name]
