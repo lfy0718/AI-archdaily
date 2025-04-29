@@ -54,8 +54,8 @@ while len(image_paths) < num_image:
     if not os.path.isdir(image_folder):
         continue
     image_names = os.listdir(image_folder)
-    image_paths = [os.path.join(image_folder, image_name) for image_name in image_names]
-    image_paths.extend(image_paths)
+    _image_paths = [os.path.join(image_folder, image_name) for image_name in image_names]
+    image_paths.extend(_image_paths)
 
 image_paths = image_paths[:num_image]
 print(len(image_paths))
