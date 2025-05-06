@@ -11,6 +11,7 @@ import threading
 import time
 import traceback
 import warnings
+import math
 from abc import abstractmethod
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,7 +21,7 @@ import cv2
 import numpy as np
 import requests
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw
 from tqdm import tqdm
 
 from utils import db_utils
@@ -618,7 +619,6 @@ def archdaily__parse_htmls(ctx: WorkingContext, flags_state, *args):
         ctx.update(1)
 
     with ThreadPoolExecutor(max_workers=64) as executor:
-        # 注意括号，使用Generator而非List
         futures = (executor.submit(_parse_project_content, project_id, i) for i, project_id in
                    enumerate(g.project_id_queue))
         logging.info("开始解析页面内容... 如果遇到image_gallery为空的情况，可能需要等待返回image_gallery结果")
@@ -1202,20 +1202,162 @@ class DefaultImageProcessor(EmbeddingImageProcessor):
         return image
 
 
-class CannyImageProcessor(EmbeddingImageProcessor):
-    def __init__(self, name, resolution: int = 512):
+class ColorClassifierProcessor(EmbeddingImageProcessor):
+    def __init__(self, name, resolution: int = 256):
         super().__init__(name)
         self.resolution = resolution
+        self.is_planar = None
+        self.max_percent = None
+        self.entropy = None
+        self.original_image = None
 
     def apply(self, image: Image.Image):
-        image.thumbnail((self.resolution, self.resolution))
-        image = image.convert("RGB")
-        image = np.array(image)
-        image = cv2.Canny(image, 100, 200)
-        image = image[:, :, None]
-        image = np.concatenate([image, image, image], axis=2)
-        image = Image.fromarray(image)
-        return image
+        # 预处理：缩放到指定分辨率
+        image.thumbnail((self.resolution, self.resolution), Image.Resampling.NEAREST)
+        img_rgb = np.array(image.convert("RGB"))
+
+        # 颜色量化（8x8x8=512种颜色）
+        quantized = (img_rgb // 32) * 32
+
+        # 预分配8x8x8计数数组（代替np.unique）
+        color_cube = np.zeros((8, 8, 8), dtype=np.int32)
+        # 将量化后的颜色映射到三维索引
+        indices = quantized // 32
+        np.add.at(color_cube, (indices[..., 0], indices[..., 1], indices[..., 2]), 1)
+
+        # 提取非零颜色和数量
+        nonzero_mask = color_cube > 0
+        counts = color_cube[nonzero_mask]
+        color_indices = np.stack(np.where(nonzero_mask), axis=1)
+        # 将索引转回实际颜色值
+        colors = color_indices * 32
+
+        # 计算明度抑制（矢量化计算）
+        R, G, B = colors[:, 0], colors[:, 1], colors[:, 2]
+        L = (0.299 * R + 0.587 * G + 0.114 * B) / 255
+        suppress_factor = 0.5 + 0.5 * L
+        suppressed_counts = counts * suppress_factor
+
+        # 计算统计指标
+        total = suppressed_counts.sum()
+        max_count = suppressed_counts.max()
+        max_percent = max_count / total
+        probs = suppressed_counts / total
+        entropy = -np.sum(probs * np.log(probs + 1e-10)) / math.log(len(probs))
+        entropy = math.pow(entropy, 0.5)
+        score = (max_percent * 2 + (1.0 - entropy) * 1) / 3.0
+
+        # 可视化部分
+        result_img = Image.fromarray(quantized)
+        draw = ImageDraw.Draw(result_img)
+        info_text = (
+            f"Max Color: {max_percent:.2f}\n"
+            f"~Entropy: {(1 - entropy):.2f}\n"
+            f"Score: {score: .2f}"
+        )
+        draw.rectangle([(10, 10), (100, 60)], fill=(0, 0, 0, 50))
+        draw.text((15, 15), info_text, fill=(255, 255, 255), spacing=4)
+
+        # 存储分类结果为对象属性，但只返回图像
+        self.is_planar = score > 0.5
+        self.max_percent = max_percent
+        self.entropy = entropy
+        self.original_image = image
+        
+        return result_img
+
+
+class CannyImageProcessor(EmbeddingImageProcessor):
+    def __init__(self, name, resolution: int = 512, gaussian_kernel_size=5, gaussian_sigma=1.2, 
+                 low_threshold_ratio=0.4, high_threshold_ratio=1.3):
+        super().__init__(name)
+        self.resolution = resolution
+        self.gaussian_kernel_size = gaussian_kernel_size
+        self.gaussian_sigma = gaussian_sigma
+        self.low_threshold_ratio = low_threshold_ratio
+        self.high_threshold_ratio = high_threshold_ratio
+
+    def apply(self, image: Image.Image):
+        # 缩放图像
+        max_size = self.resolution
+        width, height = image.size
+        if width > max_size or height > max_size:
+            scale = min(max_size / width, max_size / height)
+            new_width = int(width * scale)
+            new_height = int(height * scale)
+            image = image.resize((new_width, new_height), Image.LANCZOS)
+        
+        # 转换为OpenCV格式
+        img_array = np.array(image.convert("RGB"))
+        img_array = img_array[:, :, ::-1]  # RGB转BGR
+        
+        # 转换为灰度图
+        gray_image = cv2.cvtColor(img_array, cv2.COLOR_BGR2GRAY)
+        
+        # 计算Canny阈值
+        median_value = np.median(gray_image)
+        low_threshold = int(max(0, (1.0 - self.low_threshold_ratio) * median_value))
+        high_threshold = int(min(255, (1.0 + self.high_threshold_ratio) * median_value))
+        
+        # 应用高斯模糊
+        blurred = cv2.GaussianBlur(gray_image, 
+                                   (self.gaussian_kernel_size, self.gaussian_kernel_size), 
+                                   self.gaussian_sigma)
+        
+        # 应用Canny边缘检测
+        edges = cv2.Canny(blurred, low_threshold, high_threshold)
+        
+        # 边缘增强
+        edges = cv2.dilate(edges, None)
+        
+        # 转换为三通道图像
+        edges = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+        
+        # 转换回PIL格式
+        result_image = Image.fromarray(cv2.cvtColor(edges, cv2.COLOR_BGR2RGB))
+        
+        return result_image
+
+
+class ClassifyAndCannyProcessor(EmbeddingImageProcessor):
+    def __init__(self, name, resolution: int = 512, gaussian_kernel_size=5, gaussian_sigma=1.2, 
+                 low_threshold_ratio=0.4, high_threshold_ratio=1.3):
+        super().__init__(name)
+        self.resolution = resolution
+        self.classifier = ColorClassifierProcessor(f"{name}_classifier", resolution=256)
+        self.canny_processor = CannyImageProcessor(
+            f"{name}_canny", 
+            resolution=resolution,
+            gaussian_kernel_size=gaussian_kernel_size,
+            gaussian_sigma=gaussian_sigma,
+            low_threshold_ratio=low_threshold_ratio,
+            high_threshold_ratio=high_threshold_ratio
+        )
+        self.is_planar = None
+        self.max_percent = None
+        self.entropy = None
+        self.classification_result = None
+    
+    def apply(self, image: Image.Image):
+        # 先进行分类
+        classification_result = self.classifier.apply(image)
+        is_planar = self.classifier.is_planar
+        
+        # 只对真实照片(is_planar=False)应用Canny边缘检测
+        if not is_planar:
+            processed_image = self.canny_processor.apply(self.classifier.original_image)
+        else:
+            # 如果是技术图纸，保持原样
+            processed_image = self.classifier.original_image
+        
+        # 存储分类结果为对象属性
+        self.is_planar = is_planar
+        self.max_percent = self.classifier.max_percent
+        self.entropy = self.classifier.entropy
+        self.classification_result = classification_result
+        
+        # 只返回处理后的图像
+        return processed_image
 
 
 @st.cache_resource
@@ -1229,6 +1371,16 @@ def get_image_processors(processor_type):
         return [
             CannyImageProcessor("canny_512", 512),
             CannyImageProcessor("canny_1024", 1024)
+        ]
+    if processor_type == "color_classifier":
+        return [
+            ColorClassifierProcessor("color_classifier_256", 256),
+            ColorClassifierProcessor("color_classifier_512", 512)
+        ]
+    if processor_type == "classify_and_canny":
+        return [
+            ClassifyAndCannyProcessor("classify_and_canny_512", 512),
+            ClassifyAndCannyProcessor("classify_and_canny_1024", 1024)
         ]
     return []
 
@@ -1250,6 +1402,7 @@ def common__calculate_image_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingCont
     content_embedding_collection = db[collection_name]
 
     ctx.report_msg("正在加载模型...")
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
     from apis.gme_Qwen2_vl_2B_api import get_image_embeddings
     ctx.report_msg("模型加载完毕")
     project_id_queue = deque(g.project_id_queue)
