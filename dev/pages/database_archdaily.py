@@ -79,10 +79,23 @@ def _step2_calculate_text_embedding():
                                             st_show_detail_number=True, st_show_detail_project_id=True,
                                             st_button_icon="✨", ctx_enable_ctx_scope_check=True)
 
+    # 添加Qwen2.5-VL-32B-Instruct新方案
+    def _plan3_region():
+        st.caption("使用本地部署的Qwen2.5-VL-32B-Instruct， 输出维度4096")
+        b.template_project_id_queue_info_box("需要计算嵌入向量的项目", "DBStep2-calculate3")
+        b.template_start_work_with_progress("计算嵌入向量(使用Qwen2.5-VL-32B-Instruct)", "DBStep2-calculate3",
+                                            b.common__calculate_text_embedding_using_qwen2_5_VL_32B_Instruct,
+                                            user_settings.mongodb_archdaily_db_name,
+                                            collection_name,
+                                            st_show_detail_number=True, st_show_detail_project_id=True,
+                                            st_button_icon="✨", ctx_enable_ctx_scope_check=True)
+
     if _plan == "**方案1**":
         _plan1_region()
     elif _plan == "**方案2**":
         _plan2_region()
+    elif _plan == "**方案3**":
+        _plan3_region()
 
 
 
@@ -136,6 +149,20 @@ def _step3_calculate_image_embedding():
                                         st_show_detail_number=True, st_show_detail_project_id=True,
                                         st_button_icon="✨", ctx_enable_ctx_scope_check=True)
 
+# 在 _step3_calculate_image_embedding 函数中添加新方案
+def _plan3_region():
+    st.caption("使用本地部署的Qwen2.5-VL-32B-Instruct进行图片向量嵌入， 输出维度4096")
+    b.template_project_id_queue_info_box("需要计算嵌入向量的项目", "DBStep3-calculate3")
+    b.template_start_work_with_progress("计算嵌入向量(使用Qwen2.5-VL-32B-Instruct)", "DBStep3-calculate3",
+                                        b.common__calculate_image_embedding_using_qwen2_5_VL_32B_Instruct,
+                                        user_settings.mongodb_archdaily_db_name,
+                                        collection_name,
+                                        user_settings.archdaily_projects_dir,
+                                        input_image_dir,
+                                        image_processor_type,
+                                        image_processor_name,
+                                        st_show_detail_number=True, st_show_detail_project_id=True,
+                                        st_button_icon="✨", ctx_enable_ctx_scope_check=True)
 
 
 

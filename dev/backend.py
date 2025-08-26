@@ -1603,4 +1603,291 @@ def common__fix_nan_embeddings_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext, db
             modified_count += 1
             ctx.report_project_success(doc['project_id'])
 
+
+# 在 backend.py 中添加新的函数来支持 Qwen2.5-VL-32B-Instruct 模型：
+
+def common__calculate_text_embedding_using_qwen2_5_VL_32B_Instruct(ctx: WorkingContext, db_name, embedding_collection_name,
+                                                                   chunk_size=500,
+                                                                   chunk_overlap=50,
+                                                                   *args):
+    _total = len(g.project_id_queue)
+    assert _total > 0, "没有项目需要下载"
+    ctx.set_total(_total)
+
+    if g.mongo_client is None:
+        raise Exception("MongoDB连接失败")
+    db = g.mongo_client[db_name]
+    content_collection = db['content_collection']
+    content_embedding_collection = db[embedding_collection_name]
+
+    ctx.report_msg("正在加载模型...")
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    from apis.qwen2_5_VL_32B_api import get_text_embeddings
+
+    # 初始化文本分割器
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,  # 每段最大长度
+        chunk_overlap=chunk_overlap  # 段与段之间的重叠长度
+    )
+    project_id_queue = deque(g.project_id_queue)
+    _doc_buffer_queue = deque()
+
+    def _embedding_thread():
+        while len(project_id_queue) > 0:
+            if ctx.should_stop:
+                project_id_queue.clear()
+                break
+            if len(_doc_buffer_queue) > 100:  # put up to 50 projects in queue
+                time.sleep(0.2)
+                continue
+            project_id = project_id_queue.popleft()
+            ctx.update(1)
+            ctx.report_project_start(project_id)
+            # 此前scan时已经确保都是存在id和maincontent的，因此此处可以直接取用
+            content_doc = content_collection.find_one({'_id': project_id})
+            main_content = content_doc['main_content']
+            text_contents = [item['content'] for item in main_content if item['type'] == 'text']
+            chunks: list[dict[str: any]] = []
+            for text_idx, text in enumerate(text_contents):
+                chunks.extend([{'text_idx': text_idx, 'chunk_idx': chunk_idx, 'content': chunk} for chunk_idx, chunk in
+                               enumerate(text_splitter.split_text(text))])
+            chunks = [chunk for chunk in chunks if chunk['content'].strip() != '']
+            if len(chunks) == 0:
+                ctx.report_project_failed(project_id)
+                logging.warning(f"project: {project_id} 没有文本内容")
+                continue
+            ctx.report_project_sub_total(project_id, len(chunks))
+            input_texts = [chunk['content'] for chunk in chunks]
+
+            ctx.report_project_sub_curr(project_id, "EBD")
+            embedding_vectors = get_text_embeddings(input_texts, batch_size=min(len(input_texts), 32),
+                                                    show_progress_bar=False)
+            # 判断是否有NaN
+            if np.isnan(embedding_vectors).any():
+                ctx.report_project_failed(project_id)
+                logging.error(f"project: {project_id} 有NaN值 embedding_vectors")
+                continue
+            buffer = []
+            for i, chunk_data in enumerate(chunks):
+                text_idx = chunk_data['text_idx']
+                chunk_idx = chunk_data['chunk_idx']
+                content = chunk_data['content']
+                embedding_vector = embedding_vectors[i].tolist()
+                embedding_doc = {
+                    'project_id': project_id,
+                    'embedding': embedding_vector,
+                    'text_content': content,
+                    'text_idx': text_idx,
+                    'chunk_idx': chunk_idx,
+                }
+                buffer.append(embedding_doc)
+            if len(buffer) == 0:
+                ctx.report_project_failed(project_id)
+                logging.warning(f"project: {project_id} 没有任何数据")
+                continue
+            _doc_buffer_queue.append(buffer)
+            ctx.report_project_sub_curr(project_id, "InQ")
+
+    def _upload_doc_thread():
+        time.sleep(random.random())
+        while True:
+            if len(_doc_buffer_queue) == 0:
+                if len(project_id_queue) > 0:
+                    time.sleep(0.2)  # 等待project_id_queue队列为空，再退出循环， 否则一直待命
+                    continue
+                else:
+                    break
+            try:
+                buffer = _doc_buffer_queue.popleft()
+            except Exception as e:
+                logging.error(f"_upload_doc_thread error: {e}, this is not supposed to happen")
+                continue
+            project_id = buffer[0]['project_id']
+            ctx.report_project_sub_curr(project_id, f"WDB")
+            result = content_embedding_collection.insert_many(buffer)
+            ctx.report_project_success(project_id)
+
+    embedding_thread = threading.Thread(target=_embedding_thread)
+    embedding_thread.start()
+    upload_thread = threading.Thread(target=_upload_doc_thread)
+    upload_thread.start()
+    # 等待任务完成
+    embedding_thread.join()
+    upload_thread.join()
+
+    import torch
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
+def common__calculate_image_embedding_using_qwen2_5_VL_32B_Instruct(ctx: WorkingContext,
+                                                                    db_name,
+                                                                    collection_name,
+                                                                    projects_dir,  # 存放项目的文件夹路径
+                                                                    img_dir='image_gallery/large',  # 对于每个project的图像文件夹路径
+                                                                    img_processor_type: str = "default",
+                                                                    img_processor_name: str = "default_512"):
+    _total = len(g.project_id_queue)
+    assert _total > 0, "没有项目需要下载"
+    ctx.set_total(_total)
+
+    if g.mongo_client is None:
+        raise Exception("MongoDB连接失败")
+    db = g.mongo_client[db_name]
+    content_embedding_collection = db[collection_name]
+
+    ctx.report_msg("正在加载模型...")
+    from apis.qwen2_5_VL_32B_api import get_image_embeddings
+    ctx.report_msg("模型加载完毕")
+    project_id_queue = deque(g.project_id_queue)
+
+    img_processors = get_image_processors(img_processor_type)
+    img_processor = None
+    for p in img_processors:
+        if p.name == img_processor_name:
+            img_processor = p
+            break
+    if img_processor is None:
+        raise Exception(f"Image Processor {img_processor_name} not found")
+
+    ctx.report_msg(f"使用Image Processor: {img_processor.name} ")
+
+    _img_chunks_queue = deque()
+    _doc_buffer_queue = deque()
+
+    def _img_processing_thread():
+        while len(project_id_queue) > 0:
+            if ctx.should_stop:
+                project_id_queue.clear()
+                break
+            if len(_img_chunks_queue) > 20:  # put up to 20 projects in queue
+                time.sleep(0.2)
+                continue
+
+            try:
+                project_id = project_id_queue.popleft()
+            except Exception as e:
+                logging.error(f"_img_processing_thread error: {e}, this is not supposed to happen")
+                continue
+            ctx.update(1)
+            ctx.report_project_start(project_id)
+
+            image_folder = os.path.join(projects_dir, project_id, img_dir)
+            if not os.path.isdir(image_folder):
+                ctx.report_project_failed(project_id)
+                logging.warning(f"project: {project_id} 没有图像内容")
+                continue
+            image_names: list[str] = os.listdir(image_folder)
+            image_paths = [os.path.join(image_folder, image_name) for image_name in image_names]
+            image_idxes = [int(image_name.split('.')[0]) for image_name in image_names]
+            ctx.report_project_sub_curr(project_id, "PCS")
+            ctx.report_project_sub_total(project_id, len(image_paths))
+
+            chunks: list[dict[str: any]] = []
+            # 可以像文本分割一样，对image也进行切割
+            for i, img_path in enumerate(image_paths):
+                ctx.report_project_sub_curr(project_id, f"PCS[{i}]")
+                img = Image.open(img_path)
+                imgs = img_processor.apply(img)
+                if not isinstance(imgs, list):
+                    imgs = [imgs]
+                assert isinstance(imgs, list)
+                for chunk_idx, img in enumerate(imgs):
+                    chunks.append(
+                        {
+                            'project_id': project_id,
+                            'image': img,
+                            'image_idx': image_idxes[i],
+                            'chunk_idx': chunk_idx,
+                        }
+                    )
+            if len(chunks) == 0:
+                ctx.report_project_failed(project_id)
+                logging.warning(f"project: {project_id} 没有图像内容")
+                continue
+
+            ctx.report_project_sub_curr(project_id, "PCS[OK]")
+            _img_chunks_queue.append(chunks)  # add to queue
+
+    def _embedding_thread():
+        while True:
+            if len(_img_chunks_queue) == 0:
+                if len(project_id_queue) > 0:
+                    time.sleep(0.2)  # 等待project_id_queue队列为空，再退出循环， 否则一直待命
+                    continue
+                else:
+                    break
+            try:
+                chunks = _img_chunks_queue.popleft()
+            except Exception as e:
+                logging.error(f"_embedding_thread error: {e}, this is not supposed to happen")
+                continue
+            project_id = chunks[0]['project_id']
+            ctx.report_project_sub_curr(project_id, f"EBD")
+            ctx.report_project_sub_total(project_id, len(chunks))
+            input_images = [chunk['image'] for chunk in chunks]
+            embedding_vectors = get_image_embeddings(
+                input_images,
+                batch_size=min(len(input_images), 32),
+                show_progress_bar=True
+            )
+            # 判断是否有NaN
+            if np.isnan(embedding_vectors).any():
+                ctx.report_project_failed(project_id)
+                logging.error(f"project: {project_id} 有NaN值 embedding_vectors")
+                continue
+            buffer = []
+            for i, chunk_data in enumerate(chunks):
+                project_id = chunk_data['project_id']
+                image_idx = chunk_data['image_idx']
+                chunk_idx = chunk_data['chunk_idx']
+                embedding_vector = embedding_vectors[i].tolist()
+                doc = {
+                    'project_id': project_id,
+                    'embedding': embedding_vector,
+                    'image_idx': image_idx,
+                    'chunk_idx': chunk_idx,
+                }
+                buffer.append(doc)
+            _doc_buffer_queue.append(buffer)
+            ctx.report_project_sub_curr(project_id, "EBD[OK]")
+
+    def _upload_doc_thread():
+        time.sleep(random.random())
+        while True:
+            if len(_doc_buffer_queue) == 0:
+                if len(project_id_queue) > 0:
+                    time.sleep(0.2)  # 等待project_id_queue队列为空，再退出循环， 否则一直待命
+                    continue
+                else:
+                    break
+            try:
+                buffer = _doc_buffer_queue.popleft()
+            except Exception as e:
+                logging.error(f"_upload_doc_thread error: {e}, this is not supposed to happen")
+                continue
+            project_id = buffer[0]['project_id']
+            ctx.report_project_sub_curr(project_id, f"WDB")
+            result = content_embedding_collection.insert_many(buffer)
+            ctx.report_project_success(project_id)
+
+    process_thread1 = threading.Thread(target=_img_processing_thread)
+    process_thread1.start()
+    process_thread2 = threading.Thread(target=_img_processing_thread)
+    process_thread2.start()
+    embedding_thread = threading.Thread(target=_embedding_thread)
+    embedding_thread.start()
+    upload_thread = threading.Thread(target=_upload_doc_thread)
+    upload_thread.start()
+
+    # 等待任务完成
+    process_thread1.join()
+    process_thread2.join()
+    embedding_thread.join()
+    upload_thread.join()
+
+    import torch
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
 # endregion
