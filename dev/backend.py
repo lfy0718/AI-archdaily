@@ -1852,11 +1852,11 @@ def common__fix_nan_embeddings_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext, db
             modified_count += 1
             ctx.report_project_success(doc['project_id'])
 
-# 在 backend.py 中添加新的函数来支持 Qwen2.5-VL-32B-Instruct 模型：
 
+
+
+# 在 backend.py 中添加text_embedding函数来支持 Qwen2.5-VL-32B-Instruct 模型，并修改文本分割策略，采用自然段落分割
 def common__calculate_text_embedding_using_qwen2_5_VL_32B_Instruct(ctx: WorkingContext, db_name, embedding_collection_name,
-                                                                   chunk_size=500,
-                                                                   chunk_overlap=50,
                                                                    *args):
     _total = len(g.project_id_queue)
     assert _total > 0, "没有项目需要下载"
@@ -1869,14 +1869,8 @@ def common__calculate_text_embedding_using_qwen2_5_VL_32B_Instruct(ctx: WorkingC
     content_embedding_collection = db[embedding_collection_name]
 
     ctx.report_msg("正在加载模型...")
-    from langchain.text_splitter import RecursiveCharacterTextSplitter
     from apis.qwen2_5_VL_32B_api import get_text_embeddings
 
-    # 初始化文本分割器
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=chunk_size,  # 每段最大长度
-        chunk_overlap=chunk_overlap  # 段与段之间的重叠长度
-    )
     project_id_queue = deque(g.project_id_queue)
     _doc_buffer_queue = deque()
 
@@ -1894,12 +1888,23 @@ def common__calculate_text_embedding_using_qwen2_5_VL_32B_Instruct(ctx: WorkingC
             # 此前scan时已经确保都是存在id和maincontent的，因此此处可以直接取用
             content_doc = content_collection.find_one({'_id': project_id})
             main_content = content_doc['main_content']
-            text_contents = [item['content'] for item in main_content if item['type'] == 'text']
+
+            # 按照自然段落分割文本，而不是使用固定大小的chunk
             chunks: list[dict[str: any]] = []
-            for text_idx, text in enumerate(text_contents):
-                chunks.extend([{'text_idx': text_idx, 'chunk_idx': chunk_idx, 'content': chunk} for chunk_idx, chunk in
-                               enumerate(text_splitter.split_text(text))])
-            chunks = [chunk for chunk in chunks if chunk['content'].strip() != '']
+            text_idx = 0
+            for item in main_content:
+                if item['type'] == 'text':
+                    # 每个自然段落作为一个chunk
+                    content = item['content']
+                    if content.strip() != '':
+                        chunk_data = {
+                            'text_idx': text_idx,      # 文本在原文中的索引
+                            'chunk_idx': 0,            # 段落内chunk索引（每个段落就是一个chunk）
+                            'content': content         # 段落内容
+                        }
+                        chunks.append(chunk_data)
+                        text_idx += 1
+
             if len(chunks) == 0:
                 ctx.report_project_failed(project_id)
                 logging.warning(f"project: {project_id} 没有文本内容")
@@ -1968,6 +1973,8 @@ def common__calculate_text_embedding_using_qwen2_5_VL_32B_Instruct(ctx: WorkingC
         torch.cuda.empty_cache()
 
 
+
+# 在 backend.py 中添加image_embedding函数来支持 Qwen2.5-VL-32B-Instruct 模型
 def common__calculate_image_embedding_using_qwen2_5_VL_32B_Instruct(ctx: WorkingContext,
                                                                     db_name,
                                                                     collection_name,
