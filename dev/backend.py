@@ -12,6 +12,7 @@ import time
 import traceback
 import warnings
 import math
+from datetime import datetime
 from abc import abstractmethod
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -856,6 +857,199 @@ def common__download_gallery_images(ctx: WorkingContext, projects_dir, *args):
     logging.info('complete')
 
 
+def common__upload_canny_images(ctx: WorkingContext,
+                               db_name: str,
+                               projects_dir: str,
+                               collection_name: str = 'canny_images',
+                               skip_exist: bool = True,
+                               overwrite: bool = False,
+                               *args):
+    """将各项目 image_gallery/canny 下的线稿结果入库。
+
+    参考 common__upload_content 的入库风格：
+    - 数据库: db_name
+    - 集合: collection_name（默认 canny_images）
+    - 文档结构（示例）：
+        {
+          project_id: '12345',
+          image_idx: 12,              # 从文件名的数字部分解析，若不可解析则为 None
+          filename: '00012.jpg',
+          rel_path: '12345/image_gallery/canny/00012.jpg',
+          updated_at: ISO_DATETIME,
+        }
+    - 去重策略：以 (project_id, image_idx or filename) 作为唯一键逻辑；
+      skip_exist=True 时跳过已存在；overwrite=True 时覆盖更新；否则插入可能重复。
+    """
+    if g.mongo_client is None:
+        raise Exception("MongoDB连接失败")
+    db = g.mongo_client[db_name]
+    canny_collection = db[collection_name]
+
+    all_projects = [p for p in os.listdir(projects_dir)
+                    if os.path.isdir(os.path.join(projects_dir, p))]
+    ctx.set_total(len(all_projects))
+
+    def _parse_image_idx(name: str):
+        stem = os.path.splitext(name)[0]
+        try:
+            return int(stem)
+        except Exception:
+            return None
+
+    def _handle_project(project_id: str):
+        if ctx.should_stop:
+            return
+        ctx.report_project_start(project_id)
+        project_path = os.path.join(projects_dir, project_id)
+        canny_dir = os.path.join(project_path, 'image_gallery', 'canny')
+        if not os.path.isdir(canny_dir):
+            ctx.update(1)
+            ctx.report_project_complete(project_id)
+            return
+
+        filenames = [f for f in os.listdir(canny_dir)
+                     if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
+        if len(filenames) == 0:
+            ctx.update(1)
+            ctx.report_project_complete(project_id)
+            return
+
+        ctx.report_project_sub_total(project_id, len(filenames))
+        sub_curr = 0
+        for fname in filenames:
+            image_idx = _parse_image_idx(fname)
+            rel_path = os.path.join(project_id, 'image_gallery', 'canny', fname).replace('\\', '/')
+            doc_filter = {'project_id': project_id}
+            if image_idx is not None:
+                doc_filter['image_idx'] = image_idx
+            else:
+                doc_filter['filename'] = fname
+
+            if skip_exist and canny_collection.find_one(doc_filter, {'_id': 1}):
+                sub_curr += 1
+                ctx.report_project_sub_curr(project_id, sub_curr)
+                continue
+
+            doc = {
+                'project_id': project_id,
+                'image_idx': image_idx,
+                'filename': fname,
+                'rel_path': rel_path,
+                'updated_at': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
+            }
+
+            if overwrite:
+                canny_collection.update_one(doc_filter, {'$set': doc}, upsert=True)
+            else:
+                canny_collection.update_one(doc_filter, {'$setOnInsert': doc}, upsert=True)
+
+            sub_curr += 1
+            ctx.report_project_sub_curr(project_id, sub_curr)
+
+        ctx.update(1)
+        ctx.report_project_success(project_id)
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        futures = (executor.submit(_handle_project, pid) for pid in all_projects)
+        for _ in as_completed(futures):
+            pass
+
+    logging.info('canny images upload complete')
+
+def common__generate_canny_for_real_photos(ctx: WorkingContext,
+                                           projects_dir,
+                                           resolution: int = 512,
+                                           gaussian_kernel_size: int = 5,
+                                           gaussian_sigma: float = 1.2,
+                                           low_threshold_ratio: float = 0.4,
+                                           high_threshold_ratio: float = 1.3):
+    """遍历所有项目，将真实照片生成Canny(白底黑线)线稿，保存至 image_gallery/canny，同步全局进度与总用时。
+
+    - 不修改原有 image_gallery/large 内容
+    - 仅保存真实照片处理后的结果；技术图纸不保存
+    - 进度为全局累计图片级别进度
+    """
+    start_ts = time.time()
+    if not os.path.isdir(projects_dir):
+        raise Exception(f"projects_dir 不存在: {projects_dir}")
+
+    # 1) 预扫描，统计总图片数（large目录下）
+    project_ids = [pid for pid in os.listdir(projects_dir)
+                   if os.path.isdir(os.path.join(projects_dir, pid))]
+    total_images = 0
+    project_to_images = {}
+    for pid in project_ids:
+        large_dir = os.path.join(projects_dir, pid, 'image_gallery', 'large')
+        if not os.path.isdir(large_dir):
+            continue
+        image_names = [n for n in os.listdir(large_dir)
+                       if n.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
+        if len(image_names) == 0:
+            continue
+        project_to_images[pid] = image_names
+        total_images += len(image_names)
+
+    if total_images == 0:
+        ctx.set_total(1)
+        ctx.set_curr(1)
+        ctx.report_msg("没有找到可处理的图片")
+        return
+
+    ctx.set_total(total_images)
+
+    # 2) 初始化处理器
+    classifier = ColorClassifierProcessor("canny_batch_classifier", resolution=256)
+    canny_proc = CannyImageProcessor(
+        "canny_batch",
+        resolution=resolution,
+        gaussian_kernel_size=gaussian_kernel_size,
+        gaussian_sigma=gaussian_sigma,
+        low_threshold_ratio=low_threshold_ratio,
+        high_threshold_ratio=high_threshold_ratio
+    )
+
+    processed_real_photos = 0
+    scanned_projects = 0
+
+    # 3) 批量处理（按图片全局进度）
+    for pid, image_names in project_to_images.items():
+        if ctx.should_stop:
+            break
+        scanned_projects += 1
+        canny_dir = os.path.join(projects_dir, pid, 'image_gallery', 'canny')
+        os.makedirs(canny_dir, exist_ok=True)
+
+        large_dir = os.path.join(projects_dir, pid, 'image_gallery', 'large')
+        for img_name in image_names:
+            if ctx.should_stop:
+                break
+            try:
+                img_path = os.path.join(large_dir, img_name)
+                img = Image.open(img_path)
+
+                # 分类：判定是否为真实照片
+                _ = classifier.apply(img)
+                is_planar = classifier.is_planar
+
+                if not is_planar:  # 仅处理真实照片
+                    result_img = canny_proc.apply(classifier.original_image)
+                    out_path = os.path.join(canny_dir, img_name)
+                    result_img.save(out_path, quality=95)
+                    processed_real_photos += 1
+
+            except Exception as e:
+                logging.warning(f"生成Canny失败 pid={pid}, img={img_name}, err={e}")
+            finally:
+                ctx.update(1)  # 全局进度按图片累计
+
+    total_secs = time.time() - start_ts
+    ctx.report_msg(f"Canny生成完成: 真实照片 {processed_real_photos}/{total_images} 用时 {int(total_secs)}s")
+    ctx.custom_data['total_time_seconds'] = total_secs
+    ctx.custom_data['total_images_scanned'] = total_images
+    ctx.custom_data['real_photos_processed'] = processed_real_photos
+    ctx.custom_data['projects_scanned'] = scanned_projects
+
 def common__upload_content(ctx: WorkingContext, db_name, projects_dir, skip_exist: bool = True, *args):
     if g.mongo_client is None:
         raise Exception("MongoDB连接失败")
@@ -1069,10 +1263,10 @@ def common__calculate_text_embedding_using_multimodal_embedding_v1_api(ctx: Work
             future.result()
 
 
-def common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext, db_name, embedding_collection_name,
-                                                               chunk_size=500,
-                                                               chunk_overlap=50,
-                                                               *args):
+def common__calculate_text_embedding_using_qwen2_vl_32b_api(ctx: WorkingContext, db_name, embedding_collection_name,
+                                                           chunk_size=500,
+                                                           chunk_overlap=50,
+                                                           *args):
     _total = len(g.project_id_queue)
     assert _total > 0, "没有项目需要下载"
     ctx.set_total(_total)
@@ -1085,7 +1279,7 @@ def common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingConte
 
     ctx.report_msg("正在加载模型...")
     from langchain.text_splitter import RecursiveCharacterTextSplitter
-    from apis.gme_Qwen2_vl_2B_api import get_text_embeddings
+    from apis.qwen2_vl_32b_api import get_text_embeddings
 
     # 初始化文本分割器
     text_splitter = RecursiveCharacterTextSplitter(
@@ -1181,6 +1375,7 @@ def common__calculate_text_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingConte
     import torch
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    
 
 
 class EmbeddingImageProcessor:
@@ -1276,8 +1471,13 @@ class CannyImageProcessor(EmbeddingImageProcessor):
         self.gaussian_sigma = gaussian_sigma
         self.low_threshold_ratio = low_threshold_ratio
         self.high_threshold_ratio = high_threshold_ratio
+        self.original_image = None
+        self.processed_image = None
 
     def apply(self, image: Image.Image):
+        # 保存原始图像
+        self.original_image = image.copy()
+        
         # 缩放图像
         max_size = self.resolution
         width, height = image.size
@@ -1304,17 +1504,23 @@ class CannyImageProcessor(EmbeddingImageProcessor):
                                    (self.gaussian_kernel_size, self.gaussian_kernel_size), 
                                    self.gaussian_sigma)
         
-        # 应用Canny边缘检测
+        # 应用Canny边缘检测（默认得到黑底白线）
         edges = cv2.Canny(blurred, low_threshold, high_threshold)
         
         # 边缘增强
         edges = cv2.dilate(edges, None)
+
+        # 反相为白底黑线
+        edges = cv2.bitwise_not(edges)
         
         # 转换为三通道图像
         edges = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
         
         # 转换回PIL格式
         result_image = Image.fromarray(cv2.cvtColor(edges, cv2.COLOR_BGR2RGB))
+        
+        # 保存处理后的图像
+        self.processed_image = result_image
         
         return result_image
 
@@ -1337,8 +1543,13 @@ class ClassifyAndCannyProcessor(EmbeddingImageProcessor):
         self.max_percent = None
         self.entropy = None
         self.classification_result = None
+        self.original_image = None
+        self.processed_image = None
     
     def apply(self, image: Image.Image):
+        # 保存原始图像
+        self.original_image = image.copy()
+        
         # 先进行分类
         classification_result = self.classifier.apply(image)
         is_planar = self.classifier.is_planar
@@ -1355,9 +1566,24 @@ class ClassifyAndCannyProcessor(EmbeddingImageProcessor):
         self.max_percent = self.classifier.max_percent
         self.entropy = self.classifier.entropy
         self.classification_result = classification_result
+        self.processed_image = processed_image
         
         # 只返回处理后的图像
         return processed_image
+    
+    def save_canny_result(self, project_id: str, projects_dir: str, image_name: str, processed_image: Image.Image):
+        """保存Canny处理结果到项目的image_gallery/canny文件夹"""
+        try:
+            # 创建canny文件夹路径
+            canny_folder = os.path.join(projects_dir, project_id, 'image_gallery', 'canny')
+            os.makedirs(canny_folder, exist_ok=True)
+            
+            # 保存处理后的图像
+            output_path = os.path.join(canny_folder, image_name)
+            processed_image.save(output_path, quality=95)
+            
+        except Exception as e:
+            logging.warning(f"保存Canny结果失败 - 项目: {project_id}, 图片: {image_name}, 错误: {e}")
 
 
 @st.cache_resource
@@ -1392,6 +1618,11 @@ def common__calculate_image_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingCont
                                                                 img_dir='image_gallery/large',  # 对于每个project的图像文件夹路径
                                                                 img_processor_type: str = "default",
                                                                 img_processor_name: str = "default_512"):
+    warnings.warn(
+        "Backend now loads Qwen/Qwen2-VL-32B-Instruct under the hood; this function name remains for compatibility.",
+        DeprecationWarning,
+        stacklevel=2
+    )
     _total = len(g.project_id_queue)
     assert _total > 0, "没有项目需要下载"
     ctx.set_total(_total)
@@ -1402,8 +1633,7 @@ def common__calculate_image_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingCont
     content_embedding_collection = db[collection_name]
 
     ctx.report_msg("正在加载模型...")
-    from langchain.text_splitter import RecursiveCharacterTextSplitter
-    from apis.gme_Qwen2_vl_2B_api import get_image_embeddings
+    from apis.qwen2_vl_32b_api import get_image_embeddings
     ctx.report_msg("模型加载完毕")
     project_id_queue = deque(g.project_id_queue)
 
@@ -1458,6 +1688,12 @@ def common__calculate_image_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingCont
                 if not isinstance(imgs, list):
                     imgs = [imgs]
                 assert isinstance(imgs, list)
+                
+                # 保存Canny处理结果到项目文件夹
+                if hasattr(img_processor, 'is_planar') and hasattr(img_processor, 'processed_image'):
+                    if not img_processor.is_planar:  # 只对真实照片保存Canny结果
+                        img_processor.save_canny_result(project_id, projects_dir, image_names[i], img_processor.processed_image)
+                
                 for chunk_idx, img in enumerate(imgs):
                     chunks.append(
                         {
@@ -1557,6 +1793,19 @@ def common__calculate_image_embedding_using_gme_Qwen2_VL_2B_api(ctx: WorkingCont
         torch.cuda.empty_cache()
 
 
+def common__calculate_image_embedding_using_qwen2_vl_32b_api(ctx: WorkingContext,
+                                                             db_name,
+                                                             collection_name,
+                                                             projects_dir,  # 存放项目的文件夹路径
+                                                             img_dir='image_gallery/large',  # 对于每个project的图像文件夹路径
+                                                             img_processor_type: str = "default",
+                                                             img_processor_name: str = "default_512"):
+    """Same as common__calculate_image_embedding_using_gme_Qwen2_VL_2B_api but named for Qwen2-VL-32B."""
+    return common__calculate_image_embedding_using_gme_Qwen2_VL_2B_api(
+        ctx, db_name, collection_name, projects_dir, img_dir, img_processor_type, img_processor_name
+    )
+
+
 def common__fix_nan_embeddings_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext, db_name):
     warnings.warn("common__fix_nan_embeddings_using_gme_Qwen2_VL_2B_api is deprecated")
     if g.mongo_client is None:
@@ -1567,7 +1816,7 @@ def common__fix_nan_embeddings_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext, db
     document_count = content_embedding_collection.count_documents({})
     logging.info(f"document count = {document_count}")
     cursor = content_embedding_collection.find({})
-    from apis.gme_Qwen2_vl_2B_api import get_text_embeddings
+    from apis.qwen2_vl_32b_api import get_text_embeddings
     modified_count = 0
     ctx.set_total(document_count)
     for doc in tqdm(cursor, total=document_count):
@@ -1602,7 +1851,6 @@ def common__fix_nan_embeddings_using_gme_Qwen2_VL_2B_api(ctx: WorkingContext, db
             )
             modified_count += 1
             ctx.report_project_success(doc['project_id'])
-
 
 # 在 backend.py 中添加新的函数来支持 Qwen2.5-VL-32B-Instruct 模型：
 
