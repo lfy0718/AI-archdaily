@@ -9,6 +9,8 @@ import streamlit as st
 import streamlit_authenticator as stauth
 import yaml
 from yaml.loader import SafeLoader
+from dev import backend as b
+from config import user_settings
 
 logging.basicConfig(level=logging.INFO,
                     format="%(levelname)-8s %(asctime)-24s %(filename)-24s:%(lineno)-4d | %(message)s")
@@ -63,6 +65,40 @@ if st.session_state.get('authentication_status'):
     # 配置目录的代码必须在任何st代码运行前运行
     pg = st.navigation(pages)
     pg.run()
+    
+    # 添加Canny处理操作到侧边栏
+    with st.sidebar.expander("🖼️ Canny 线稿批处理"):
+        st.caption("不改动 image_gallery/large，仅将线稿保存到 image_gallery/canny")
+        
+        # Canny生成按钮
+        b.template_start_work_with_progress(
+            label="开始批量生成 Canny 线稿",
+            ctx_name="archdaily-canny-batch",
+            working_content=b.common__generate_canny_for_real_photos,
+            *[user_settings.archdaily_projects_dir, 512, 5, 1.2, 0.4, 1.3],
+            st_button_icon="🖼️",
+        )
+        
+        st.divider()
+        
+        # Canny入库按钮
+        st.caption("将各项目 image_gallery/canny 的图片信息入库到 MongoDB")
+        skip_exist_canny_upload = st.checkbox("跳过已存在的Canny图片", value=True, key="canny_upload_skip_exist")
+        overwrite_canny_upload = st.checkbox("覆盖已存在的Canny图片", value=False, key="canny_upload_overwrite")
+        
+        b.template_start_work_with_progress(
+            label="入库 Canny 结果到 MongoDB",
+            ctx_name="archdaily-canny-upload-db",
+            working_content=b.common__upload_canny_images,
+            *[
+                user_settings.mongodb_archdaily_db_name,
+                user_settings.archdaily_projects_dir,
+                'canny_images',
+                skip_exist_canny_upload,
+                overwrite_canny_upload
+            ],
+            st_button_icon="💾",
+        )
 
 else:
     # 如果没有登录，则显示空白页面
