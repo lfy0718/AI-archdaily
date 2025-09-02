@@ -19,6 +19,43 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+# ============ Canny Page ============
+def page_canny():
+    st.title("Canny 线稿批处理")
+    st.caption("不改动每个项目的 image_gallery/large，仅将线稿保存到 image_gallery/canny")
+
+    st.subheader("步骤一：批量生成 Canny 线稿")
+    b.template_start_work_with_progress(
+        "开始批量生成 Canny 线稿",
+        "archdaily-canny-batch",
+        b.common__generate_canny_for_real_photos,
+        user_settings.archdaily_projects_dir, 512, 5, 1.2, 0.4, 1.3,
+        st_button_icon="🖼️",
+    )
+
+    st.divider()
+
+    st.subheader("步骤二：将 Canny 结果入库 MongoDB")
+    st.caption("扫描各项目 image_gallery/canny，将图片信息写入 MongoDB 集合")
+    col1, col2 = st.columns(2)
+    with col1:
+        skip_exist_canny_upload = st.checkbox("跳过已存在的Canny图片", value=True, key="canny_upload_skip_exist_page")
+    with col2:
+        overwrite_canny_upload = st.checkbox("覆盖已存在的Canny图片", value=False, key="canny_upload_overwrite_page")
+
+    b.template_start_work_with_progress(
+        "入库 Canny 结果到 MongoDB",
+        "archdaily-canny-upload-db",
+        b.common__upload_canny_images,
+        user_settings.mongodb_archdaily_db_name,
+        user_settings.archdaily_projects_dir,
+        'canny_images',
+        skip_exist_canny_upload,
+        overwrite_canny_upload,
+        st_button_icon="💾",
+    )
+
+
 @st.cache_resource
 def load_auth_config():
     """从本地加载登录信息，使用 `@st.cache_resource` 使其在整个程序生命周期仅加载一次"""
@@ -57,48 +94,16 @@ if st.session_state.get('authentication_status'):
             st.Page(os.path.join(PAGES_FOLDER, "database_archdaily.py"), title="Manage Archdaily Database"),
             st.Page(os.path.join(PAGES_FOLDER, "database_gooood.py"), title="Manage Gooood Database"),
         ],
+        "🖼️Canny": [
+            st.Page(page_canny, title="Canny 线稿批处理"),
+        ],
         "Chat": [
             st.Page(os.path.join(PAGES_FOLDER, "chat_archdaily.py"), title="Chat Archdaily"),
-
         ]
     }
     # 配置目录的代码必须在任何st代码运行前运行
     pg = st.navigation(pages)
     pg.run()
-    
-    # 添加Canny处理操作到侧边栏
-    with st.sidebar.expander("🖼️ Canny 线稿批处理"):
-        st.caption("不改动 image_gallery/large，仅将线稿保存到 image_gallery/canny")
-        
-        # Canny生成按钮
-        b.template_start_work_with_progress(
-            label="开始批量生成 Canny 线稿",
-            ctx_name="archdaily-canny-batch",
-            working_content=b.common__generate_canny_for_real_photos,
-            *[user_settings.archdaily_projects_dir, 512, 5, 1.2, 0.4, 1.3],
-            st_button_icon="🖼️",
-        )
-        
-        st.divider()
-        
-        # Canny入库按钮
-        st.caption("将各项目 image_gallery/canny 的图片信息入库到 MongoDB")
-        skip_exist_canny_upload = st.checkbox("跳过已存在的Canny图片", value=True, key="canny_upload_skip_exist")
-        overwrite_canny_upload = st.checkbox("覆盖已存在的Canny图片", value=False, key="canny_upload_overwrite")
-        
-        b.template_start_work_with_progress(
-            label="入库 Canny 结果到 MongoDB",
-            ctx_name="archdaily-canny-upload-db",
-            working_content=b.common__upload_canny_images,
-            *[
-                user_settings.mongodb_archdaily_db_name,
-                user_settings.archdaily_projects_dir,
-                'canny_images',
-                skip_exist_canny_upload,
-                overwrite_canny_upload
-            ],
-            st_button_icon="💾",
-        )
 
 else:
     # 如果没有登录，则显示空白页面
