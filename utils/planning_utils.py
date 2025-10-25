@@ -18,7 +18,7 @@ from openai import OpenAI
 from datetime import datetime
 
 # 确保可以导入项目模块
-sys.path.append('.')
+#sys.path.append('.')
 
 
 class VectorSearchManager:
@@ -124,7 +124,7 @@ class VectorSearchManager:
         pipeline = [
             {
                 "$vectorSearch": {
-                    "index": "vector_index",  # 向量索引名称
+                    "index": self.config.vector_search_index_name,   # 向量索引名称
                     "path": "embedding",  # 向量字段名
                     "queryVector": query_embedding,
                     "numCandidates": top_k * 10,
@@ -282,14 +282,19 @@ class ImageSearchManager:
 class QwenAPIClient:
     """Qwen3 API客户端 - 负责所有大模型对话"""
 
-    def __init__(self):
-        """初始化Qwen客户端"""
+   def __init__(self):
+    """初始化Qwen客户端"""
+    try:
         self.client = OpenAI(
-            api_key=os.getenv("DASHSCOPE_API_KEY"),
+            api_key=os.getenv("DASHSCOPE_API_KEY") or "sk-05dba08497cf465f9e4b9ca1a25bb973",  # ✅ 添加默认值
             base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
         )
         self.model = "qwen-plus"
         print(f"✅ Qwen对话模型初始化成功 ({self.model})")
+    except Exception as e:
+        print(f"❌ Qwen客户端初始化失败: {e}")
+        raise
+
 
     def _call_api(self, prompt: str, system_prompt: str = None,
                   temperature: float = 0.7) -> str:

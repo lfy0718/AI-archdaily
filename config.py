@@ -6,7 +6,8 @@ import atexit
 import json
 import logging
 import os
-import openai import OpenAI
+from openai import OpenAI
+
 
 
 class Config:
