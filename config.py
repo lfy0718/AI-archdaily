@@ -10,33 +10,33 @@ from openai import OpenAI
 
 
 
-class Config:
-    """系统配置类"""
-
-    def __init__(self):
-        # ===== MongoDB配置 =====
-        self.mongodb_host = 'mongodb://localhost:32768/?directConnection=true'
-        self.mongodb_db_name = 'AI-Archdaily'
-        # 【关键】使用两个collection
-        self.mongodb_content_collection = 'content_collection'  # 原始文本数据
-        self.mongodb_embedding_collection = 'content_embedding'  # 向量数据（用于检索）
-
-        # 向量搜索索引名称（在MongoDB Atlas中创建的索引名）
-        self.vector_search_index_name = 'vector_index_text'  # 请根据实际索引名修改，已修改
-
-        # ===== Qwen3 API配置 =====
-        self.qwen_api_key = os.getenv("DASHSCOPE_API_KEY") or "sk-your-key-here"
-        self.qwen_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-        self.qwen_model = "qwen-plus"  # 对话模型
-        self.qwen_embedding_model = "text-embedding-v3"  # 向量化模型
-
-        # ===== 数据库文件路径（图片检索用） =====
-        self.image_database_path = "results/database/image_database.pkl"
-        self.projects_dir = './results/archdaily/projects'
-
-        # ===== 检索参数 =====
-        self.top_k_text = 5  # 文本检索返回数量
-        self.top_k_images = 6  # 图片检索返回数量
+# class Config:
+#     """系统配置类"""
+#
+#     def __init__(self):
+#         # ===== MongoDB配置 =====
+#         self.mongodb_host = 'mongodb://localhost:32768/?directConnection=true'
+#         self.mongodb_db_name = 'AI-Archdaily'
+#         # 【关键】使用两个collection
+#         self.mongodb_content_collection = 'content_collection'  # 原始文本数据
+#         self.mongodb_embedding_collection = 'content_embedding'  # 向量数据（用于检索）
+#
+#         # 向量搜索索引名称（在MongoDB Atlas中创建的索引名）
+#         self.vector_search_index_name = 'vector_index_text'  # 请根据实际索引名修改，已修改
+#
+#         # ===== Qwen3 API配置 =====
+#         self.qwen_api_key = os.getenv("DASHSCOPE_API_KEY") or "sk-your-key-here"
+#         self.qwen_base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+#         self.qwen_model = "qwen-plus"  # 对话模型
+#         self.qwen_embedding_model = "text-embedding-v3"  # 向量化模型
+#
+#         # ===== 数据库文件路径（图片检索用） =====
+#         self.image_database_path = "results/database/image_database.pkl"
+#         self.projects_dir = './results/archdaily/projects'
+#
+#         # ===== 检索参数 =====
+#         self.top_k_text = 5  # 文本检索返回数量
+#         self.top_k_images = 6  # 图片检索返回数量
 
     def get_qwen_client(self) -> OpenAI:
         """获取Qwen对话客户端"""
@@ -101,6 +101,7 @@ class UserSettings:
 
         # qwen api key
         self.api_keys = ['put your api key here', ]
+        self.qwen_api_key = 'sk-xxxx'
 
 
 def load_user_settings(_user_settings: UserSettings) -> None:
